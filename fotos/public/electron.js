@@ -244,7 +244,6 @@ async function startFtpServer(username = "user", directory, albumId, token, port
         }
       };
 
-      // Validate file as an image by checking magic numbers
       const isImageFile = async (filePath) => {
         try {
           const buffer = await fs.readFile(filePath, { encoding: null, flag: "r" });
@@ -255,9 +254,9 @@ async function startFtpServer(username = "user", directory, albumId, token, port
             webp: ["52494646"],
             tiff: ["49492a00", "4d4d002a"],
             bmp: ["424d"],
-            cr2: ["49492a00"], // Canon RAW
-            cr3: ["66747970637278"], // Canon RAW (CR3, ftypcrx)
-            nef: ["4d4d002a"], // Nikon RAW (NEF)
+            cr2: ["49492a00"], 
+            cr3: ["66747970637278"], 
+            nef: ["4d4d002a"], 
             arw: ["49492a00", "4d4d002a"],
           };
           const firstBytes = buffer.slice(0, 8).toString("hex").toLowerCase();
