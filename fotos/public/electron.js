@@ -24,7 +24,7 @@ process.on("unhandledRejection", (reason, promise) => {
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "496438207267-5sm1joa903t9k6ddgv5ulaigq8qvql46.apps.googleusercontent.com";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "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";
 const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:3000/api/auth/callback/google";
-const SERVER_URL = process.env.SERVER_URL || "https://backend-google-three.vercel.app";
+const SERVER_URL = process.env.SERVER_URL || "http://localhost:4000" || "https://backend-google-three.vercel.app";
 const FTP_PORT = parseInt(process.env.FTP_PORT, 10) || 2121;
 const FTP_PASV_RANGE = process.env.FTP_PASV_RANGE || "8000-9000";
 
@@ -99,7 +99,8 @@ function createWindow() {
 
   mainWindow.maximize();
 
-  const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
+  // const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
+  const startUrl = "http://localhost:3000"
   console.log(startUrl);
 
   mainWindow.loadURL(startUrl).catch((err) => {
@@ -311,7 +312,6 @@ async function startFtpServer(username = "user", directory, albumId, token, port
               folder: "albums",
               resource_type: "image",
               public_id: `camera_${uuidv4()}`,
-              // Remove format: "auto", let Cloudinary infer format
             })
           );
           cloudinaryUrl = result.secure_url;
