@@ -27,4 +27,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     imageStreamListeners.delete(callback);
   },
   closeFtp: () => ipcRenderer.invoke("close-ftp"),
+  onClearFtpCredentials: (callback) => ipcRenderer.on("clear-ftp-credentials", (event, data) => callback(data)),
+  removeClearFtpCredentialsListener: (callback) => ipcRenderer.removeListener("clear-ftp-credentials", callback),
 });

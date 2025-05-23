@@ -99,30 +99,27 @@ function createWindow() {
 
   mainWindow.maximize();
 
-  // const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
-  const startUrl = "http://localhost:3000"
+  const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
+  // const startUrl = "http://localhost:3000"
   console.log(startUrl);
 
   mainWindow.loadURL(startUrl).catch((err) => {
     logger.error("Failed to load URL", { error: err.message });
   });
 
-   mainWindow.webContents.openDevTools({ mode:"detach"});
+  mainWindow.webContents.openDevTools({ mode: "detach" });
 
-  mainWindow.on("closed", () => {
+
+  mainWindow.on("close", () => {
     mainWindow = null;
     if (authWindow) {
       authWindow.destroy();
       authWindow = null;
     }
+    notifyRendererToClearCredentials();
     watchers.forEach((watcher) => watcher.close());
     watchers.clear();
   });
-
-  setTimeout(() => {
-    mainWindow.webContents.send("image-stream", { action: "test", imageUrl: "https://example.com/test.jpg" });
-    logger.info("Sent test image-stream IPC message");
-  }, 1000);
 }
 
 const generateNumericPassword = () => {
@@ -255,9 +252,9 @@ async function startFtpServer(username = "user", directory, albumId, token, port
             webp: ["52494646"],
             tiff: ["49492a00", "4d4d002a"],
             bmp: ["424d"],
-            cr2: ["49492a00"], 
-            cr3: ["66747970637278"], 
-            nef: ["4d4d002a"], 
+            cr2: ["49492a00"],
+            cr3: ["66747970637278"],
+            nef: ["4d4d002a"],
             arw: ["49492a00", "4d4d002a"],
           };
           const firstBytes = buffer.slice(0, 8).toString("hex").toLowerCase();
@@ -295,7 +292,7 @@ async function startFtpServer(username = "user", directory, albumId, token, port
         }
 
         const isImage = await isImageFile(filePath);
-          
+
         console.log(isImage)
 
         if (!isImage) {
@@ -608,6 +605,9 @@ ipcMain.handle("get-ftp-credentials", async () => {
         .map((iface) => iface.address);
       const host = address[0] || "localhost";
       const port = FTP_PORT;
+      if (!ftpServer || ftpServer.closed) {
+        return {};
+      }
       return {
         username,
         password,
@@ -885,6 +885,15 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
 });
 
+
+const notifyRendererToClearCredentials = () => {
+  const windows = BrowserWindow.getAllWindows();
+  windows.forEach((win) => {
+    win.webContents.send("clear-ftp-credentials", { message: "App is closing, clear FTP credentials and localStorage" });
+    logger.info("Notified renderer to clear FTP credentials and localStorage");
+  });
+};
+
 app.on("window-all-closed", async () => {
   logger.info("All windows closed");
   if (process.platform !== "darwin") {
@@ -898,6 +907,7 @@ app.on("window-all-closed", async () => {
         logger.error("Failed to close FTP server", { error: error.message });
       }
     }
+    notifyRendererToClearCredentials();
     watchers.forEach((watcher) => watcher.close());
     watchers.clear();
     app.quit();
@@ -915,6 +925,14 @@ app.on("before-quit", async () => {
       logger.error("Failed to close FTP server", { error: error.message });
     }
   }
+  notifyRendererToClearCredentials();
   watchers.forEach((watcher) => watcher.close());
   watchers.clear();
+});
+
+ipcMain.on("exit-app", () => {
+  logger.info("Received exit-app message from renderer, closing app");
+  if (mainWindow) {
+    mainWindow.close(); 
+  }
 });

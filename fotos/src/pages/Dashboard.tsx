@@ -4,15 +4,9 @@ import { PageLoader, ErrorDisplay } from "../components/common/loaders";
 import axiosInstance from "../utils/api";
 import type { Album } from "../constants/type";
 import { useQuery } from "@tanstack/react-query";
-import { db } from "@/lib/db";
 
 const fetchAlbums = async () => {
-  if (!navigator.onLine) {
-    return await db.albums.toArray();
-  }
   const { data } = await axiosInstance.get<Album[]>("/api/albums");
-  await db.albums.clear();
-  await db.albums.bulkPut(data);
   return data;
 };
 
@@ -20,8 +14,8 @@ const Dashboard: React.FC = () => {
   const { data: albums = [], isLoading, error } = useQuery({
     queryKey: ["albums"],
     queryFn: fetchAlbums,
-    staleTime: 1000 * 60,
-    refetchInterval: 1000 * 60,
+    staleTime: 1000 * 5,
+    refetchInterval: 1000 * 5, 
     retry: 1,
   });
 
@@ -67,7 +61,7 @@ const Dashboard: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {albums.map((album: Album) => (
+            {albums.map((album) => (
               <AlbumCard key={album.id} album={album} />
             ))}
           </div>
