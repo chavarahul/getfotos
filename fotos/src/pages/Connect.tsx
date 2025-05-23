@@ -42,7 +42,7 @@ const Connect: React.FC = () => {
     queryFn: () => fetchAlbums(user!.id),
     enabled: !!user?.id,
     staleTime: 1000 * 30, 
-    refetchInterval: user?.id ? 1000 * 30 : undefined, 
+    refetchInterval: user?.id ? 1000 * 5 : undefined, 
     retry: 3,
   });
 
@@ -61,7 +61,6 @@ const Connect: React.FC = () => {
     };
   }, [user?.id, queryClient]);
 
-  // Debugging logs (remove in production)
   useEffect(() => {
     console.log("User state:", { user, isUserLoading, userError });
     console.log("Albums state:", { albums, isAlbumsLoading, albumsError });

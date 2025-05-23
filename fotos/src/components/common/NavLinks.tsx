@@ -17,7 +17,7 @@ export default function NavLinks(_props: NavLinksProps = {}) {
   const links: NavLinkItem[] = [
     { path: '/dashboard', label: 'Album', icon: Home },
     { path: '/connect', label: 'Connect', icon: ImageIcon },
-    { path: '/settings', label: 'Settings', icon: Settings },
+    // { path: '/settings', label: 'Settings', icon: Settings },
   ];
 
   const linkClasses = (path: string, isActive: boolean): string =>

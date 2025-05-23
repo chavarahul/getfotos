@@ -10,3 +10,7 @@
   padding: 0;
   box-sizing: border-box;
 }
+
+:where(body,html)::-webkit-scrollbar{
+  width: 0px;
+}

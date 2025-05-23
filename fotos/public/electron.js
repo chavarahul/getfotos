@@ -55,6 +55,40 @@ const albumIds = new Map();
 const processedFiles = new Set();
 const watchers = new Map();
 
+const DEFAULT_FTP_PASSWORD = "xy12z";
+
+const passwordFilePath = path.join(app.getPath("userData"), "ftpPassword.json");
+
+let ftpPassword = DEFAULT_FTP_PASSWORD;
+const loadFtpPassword = async () => {
+  try {
+    const data = await fs.readFile(passwordFilePath, "utf8");
+    const parsed = JSON.parse(data);
+    if (parsed.password && /^[a-z0-9]{5}$/.test(parsed.password)) {
+      ftpPassword = parsed.password;
+      logger.info("Loaded FTP password from file", { password: ftpPassword });
+    } else {
+      logger.warn("Invalid password in file, using default");
+    }
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      logger.info("Password file not found, initializing with default");
+      await saveFtpPassword(DEFAULT_FTP_PASSWORD);
+    } else {
+      logger.error("Failed to load FTP password", { error: error.message });
+    }
+  }
+};
+
+const saveFtpPassword = async (password) => {
+  try {
+    await fs.writeFile(passwordFilePath, JSON.stringify({ password }, null, 2));
+    logger.info("Saved FTP password to file", { password });
+  } catch (error) {
+    logger.error("Failed to save FTP password", { error: error.message });
+  }
+};
+
 const isPortInUse = (port) => {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -100,6 +134,7 @@ function createWindow() {
   mainWindow.maximize();
 
   const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
+  // const startUrl= "http://localhost:3000/"
   console.log(startUrl);
 
   mainWindow.loadURL(startUrl).catch((err) => {
@@ -159,33 +194,8 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
     return { error: "Directory does not exist or is inaccessible" };
   }
 
-  let password;
-  // Check localStorage first
-  const savedCredentials = await mainWindow.webContents.executeJavaScript('localStorage.getItem("ftpCredentials")');
-  if (savedCredentials) {
-    const creds = JSON.parse(savedCredentials);
-    if (creds.username === username && creds.password) {
-      password = creds.password;
-      logger.info("Reusing password from localStorage", { username });
-    }
-  }
-
-  // Check userCredentials if no password from localStorage
-  const existingCredentials = userCredentials.get(username);
-  if (existingCredentials?.password && !password) {
-    password = existingCredentials.password;
-    logger.info("Reusing password from userCredentials", { username });
-  }
-
-  // Generate new password if none exists
-  if (!password) {
-    password = generatePassword();
-    userCredentials.set(username, { password });
-    logger.info("Generated new password", { username, password });
-  } else {
-    userCredentials.set(username, { password });
-  }
-
+  const password = ftpPassword;
+  userCredentials.set(username, { password });
   directories.set(username, absoluteDir);
   albumIds.set(username, albumId);
 
@@ -316,9 +326,6 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
         }
 
         const isImage = await isImageFile(filePath);
-
-        console.log(isImage)
-
         if (!isImage) {
           logger.error("File is not a recognized image", { filePath });
           mainWindow.webContents.send("image-stream", { action: "error", error: `Not an image: ${fileName}` });
@@ -336,6 +343,12 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
           );
           cloudinaryUrl = result.secure_url;
           logger.info("Image uploaded to Cloudinary", { cloudinaryUrl, publicId: result.public_id });
+          mainWindow.webContents.send("image-stream", {
+            action: "add",
+            imageUrl: cloudinaryUrl,
+            publicId: result.public_id // Add publicId
+          });
+          logger.info("Sent image to frontend via IPC", { imageUrl: cloudinaryUrl, publicId: result.public_id });
         } catch (error) {
           logger.error("Cloudinary upload failed", {
             filePath,
@@ -354,6 +367,12 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
             );
             cloudinaryUrl = result.secure_url;
             logger.info("Fallback JPEG upload to Cloudinary succeeded", { cloudinaryUrl, publicId: result.public_id });
+            mainWindow.webContents.send("image-stream", {
+              action: "add",
+              imageUrl: cloudinaryUrl,
+              publicId: result.public_id // Add publicId for fallback
+            });
+            logger.info("Sent fallback image to frontend via IPC", { imageUrl: cloudinaryUrl, publicId: result.public_id });
           } catch (fallbackError) {
             logger.error("Fallback JPEG upload failed", {
               filePath,
@@ -365,9 +384,6 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
             return;
           }
         }
-
-        mainWindow.webContents.send("image-stream", { action: "add", imageUrl: cloudinaryUrl });
-        logger.info("Sent image to frontend via IPC", { imageUrl: cloudinaryUrl });
 
         try {
           const response = await retry(() =>
@@ -682,20 +698,22 @@ ipcMain.handle("close-ftp", async () => {
 
 ipcMain.handle("regenerate-ftp-password", async (event, username) => {
   logger.info("Regenerating FTP password", { username });
-  const password = generatePassword();
-  userCredentials.set(username, { password });
-  logger.info("New password generated", { username, password });
+  const newPassword = generatePassword();
+  ftpPassword = newPassword; // Update the constant password
+  await saveFtpPassword(newPassword); // Persist the new password
+  userCredentials.set(username, { password: newPassword });
+  logger.info("New password generated and saved", { username, password: newPassword });
 
   const savedCredentials = await mainWindow.webContents.executeJavaScript('localStorage.getItem("ftpCredentials")');
   if (savedCredentials) {
     const creds = JSON.parse(savedCredentials);
     if (creds.username === username) {
-      creds.password = password;
+      creds.password = newPassword;
       await mainWindow.webContents.executeJavaScript(`localStorage.setItem("ftpCredentials", ${JSON.stringify(JSON.stringify(creds))})`);
     }
   }
 
-  return { password };
+  return { password: newPassword };
 });
 
 ipcMain.handle("test-ftp-credentials", async (event, { username, password }) => {
@@ -902,6 +920,7 @@ ipcMain.handle("node-version", async (event, msg) => {
 });
 
 app.whenReady().then(async () => {
+  await loadFtpPassword(); // Load the FTP password before starting
   logger.info("Electron app starting");
   createWindow();
   Menu.setApplicationMenu(null);

@@ -6,41 +6,53 @@ interface ImageStreamData {
   imageUrl: string;
 }
 
-const LiveFeed: React.FC<{ reset: boolean }> = ({ reset }) => {
+const LiveFeed: React.FC = () => {
   const [images, setImages] = useState<string[]>(() => {
-    // Load images from localStorage on mount
+    // Initialize images: check ftpCleared and load from localStorage if not cleared
+    const ftpCleared = localStorage.getItem("ftpCleared");
+    if (ftpCleared === "true") {
+      return [];
+    }
     const savedImages = localStorage.getItem("liveFeedImages");
     return savedImages ? JSON.parse(savedImages) : [];
   });
 
   useEffect(() => {
-    if (reset) {
-      setImages([]);
-      localStorage.removeItem("liveFeedImages");
-      return;
-    }
-
+    // Handle image stream
     const handleImageStream = (data: ImageStreamData) => {
       if (data.action === "add" && data.imageUrl) {
         setImages((prev) => {
-          // Avoid duplicates by checking if imageUrl already exists
-          if (prev.includes(data.imageUrl)) {
-            return prev;
+          // If images are empty, check ftpCleared and localStorage
+          let updatedImages = prev;
+          if (prev.length === 0) {
+            const ftpCleared = localStorage.getItem("ftpCleared");
+            if (ftpCleared !== "true") {
+              const savedImages = localStorage.getItem("liveFeedImages");
+              updatedImages = savedImages ? JSON.parse(savedImages) : [];
+            }
           }
-          const updatedImages = [data.imageUrl, ...prev].slice(0, 50);
+
+          // Avoid duplicates
+          if (updatedImages.includes(data.imageUrl)) {
+            return updatedImages;
+          }
+
+          // Add new image and limit to 50
+          updatedImages = [data.imageUrl, ...updatedImages].slice(0, 50);
           localStorage.setItem("liveFeedImages", JSON.stringify(updatedImages));
+          // Do NOT modify ftpCleared
           return updatedImages;
         });
       }
     };
 
+
     window.electronAPI.onImageStream(handleImageStream);
 
     return () => {
       window.electronAPI.removeImageStreamListener(handleImageStream);
-      console.log("Cleaned up image-stream listener");
     };
-  }, [reset]);
+  }, []);
 
   return (
     <Card>

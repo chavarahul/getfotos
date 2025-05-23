@@ -17,16 +17,31 @@ contextBridge.exposeInMainWorld("electronAPI", {
   resetFtpCredentials: () => ipcRenderer.invoke("reset-ftp-credentials"),
   testFtpCredentials: (credentials) => ipcRenderer.invoke("test-ftp-credentials", credentials),
   regenerateFtpPassword: (username) => ipcRenderer.invoke("regenerate-ftp-password", username),
+  closeFtp: () => ipcRenderer.invoke("close-ftp"),
   onImageStream: (callback) => {
+    console.log("Registering image-stream listener, total:", imageStreamListeners.size + 1);
     imageStreamListeners.add(callback);
-    ipcRenderer.on("image-stream", (event, data) => {
-      imageStreamListeners.forEach((listener) => listener(data));
-    });
+    const handler = (event, data) => {
+      console.log("Received image-stream event:", JSON.stringify(data));
+      imageStreamListeners.forEach((listener) => {
+        try {
+          listener(data);
+        } catch (error) {
+          console.error("Error in image-stream listener:", error.message);
+        }
+      });
+    };
+    ipcRenderer.on("image-stream", handler);
+    return () => {
+      imageStreamListeners.delete(callback);
+      ipcRenderer.removeListener("image-stream", handler);
+      console.log("Removed image-stream listener, total:", imageStreamListeners.size);
+    };
   },
   removeImageStreamListener: (callback) => {
     imageStreamListeners.delete(callback);
+    console.log("Removed image-stream listener via removeImageStreamListener, total:", imageStreamListeners.size);
   },
-  closeFtp: () => ipcRenderer.invoke("close-ftp"),
   onClearFtpCredentials: (callback) => ipcRenderer.on("clear-ftp-credentials", (event, data) => callback(data)),
   removeClearFtpCredentialsListener: (callback) => ipcRenderer.removeListener("clear-ftp-credentials", callback),
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback} from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Suspense } from "react";
@@ -8,11 +8,12 @@ import LiveFeed from "./LiveFeed";
 import { RefreshCw } from "lucide-react";
 import type { Camera, ConnectionDetails } from "../constants/type";
 import logo from "/assets/monotype-white.svg";
+import { CustomSelect } from "@/components/common/CustomSelect";
 
 interface ClientConnectFormProps {
   cameras: Camera[];
   albums: { id: string; name: string }[];
-  username: string; // Removed default "user"
+  username: string;
 }
 
 interface ElectronAPI {
@@ -43,6 +44,7 @@ declare global {
   }
 }
 
+
 const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
   cameras,
   albums,
@@ -62,7 +64,6 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
     directory: "",
   });
   const [isFtpCleared, setIsFtpCleared] = useState<boolean>(false);
-  // console.log(username)
 
   useEffect(() => {
     const loadPersistedState = async () => {
@@ -270,95 +271,70 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 sm:p-6 lg:p-8">
-      <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Side: Form and Credentials */}
-        <div className="space-y-6">
-          {/* Form Container */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sm:p-8">
-            <h3 className="text-2xl font-semibold text-black mb-6">Setup FTP Connection</h3>
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Camera Selection */}
+    <div className="min-h-screen flex items-start justify-center">
+      <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-4 mx-auto">
+        <div className="space-y-4">
+          <div className="bg-white/70 rounded-2xl shadow-md border border-gray-200 p-4 sm:p-6">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4 leading-6">Setup FTP Connection</h3>
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="camera" className="block text-sm font-medium text-black">
+                <label htmlFor="camera" className="block text-sm font-medium text-gray-700 leading-5">
                   Select Camera
                 </label>
-                <select
+                <CustomSelect
                   id="camera"
                   value={formValues.camera}
-                  onChange={(e) => handleValueChange("camera", e.target.value)}
-                  className="w-full px-4 py-2 bg-white text-black border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black transition-colors"
-                >
-                  <option value="" disabled>
-                    Choose a camera
-                  </option>
-                  {cameras.map((camera) => (
-                    <option key={camera.id} value={camera.id}>
-                      {camera.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => handleValueChange("camera", value)}
+                  options={cameras.map(camera => ({ id: camera.id, name: camera.name }))}
+                  placeholder="Choose a camera"
+                />
               </div>
 
-              {/* Album Selection */}
               <div className="space-y-2">
-                <label htmlFor="album" className="block text-sm font-medium text-black">
+                <label htmlFor="album" className="block text-sm font-medium text-gray-700 leading-5">
                   Select Album
                 </label>
-                <select
+                <CustomSelect
                   id="album"
                   value={formValues.album}
-                  onChange={(e) => handleValueChange("album", e.target.value)}
-                  className="w-full px-4 py-2 bg-white text-black border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black transition-colors"
-                >
-                  <option value="" disabled>
-                    Choose an album
-                  </option>
-                  {albums.map((album) => (
-                    <option key={album.id} value={album.id}>
-                      {album.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => handleValueChange("album", value)}
+                  options={albums}
+                  placeholder="Choose an album"
+                />
               </div>
 
-              {/* Directory Input */}
               <div className="space-y-2">
-                <label htmlFor="directory" className="block text-sm font-medium text-black">
+                <label htmlFor="directory" className="block text-sm font-medium text-gray-700 leading-5">
                   Select Local Directory
                 </label>
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2">
                   <input
                     id="directory"
-                    placeholder="Select or enter directory path (e.g., C:\Users\chava\Pictures)"
+                    placeholder="Enter directory path (e.g., C:\Users\Name\Pictures)"
                     value={formValues.directory}
                     onChange={(e) => handleValueChange("directory", e.target.value)}
-                    className="flex-1 px-4 py-2 bg-white text-black border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                    className="flex-1 px-4 py-3 bg-white text-gray-900 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-600 placeholder-gray-500 transition-all duration-300 ease-in-out text-sm leading-5"
                   />
                   <button
                     type="button"
                     onClick={openDirectoryPicker}
-                    className="px-4 py-2 bg-white text-black border border-gray-300 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                    className="px-4 py-3 bg-gray-100 text-gray-900 border border-gray-300 rounded-xl hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-600 transition-all duration-300 ease-in-out text-sm leading-5"
                   >
                     Browse
                   </button>
                 </div>
-                {formValues.directory && (
-                  <p className="text-sm text-gray-500">Selected: {formValues.directory}</p>
-                )}
               </div>
 
-              {/* Connect to FTP Button */}
               {(!credentials || isFtpCleared) && (
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-black disabled:opacity-50 transition-colors"
+                  className="w-full px-4 py-3 bg-black text-white rounded-xl hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-600 disabled:opacity-50 transition-all duration-300 ease-in-out text-sm leading-5"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center">
                       <svg
-                        className="animate-spin h-5 w-5 mr-2 text-white"
+                        className="animate-spin h-4 w-4 mr-2 text-white"
                         viewBox="0 0 24 24"
                       >
                         <circle
@@ -382,64 +358,64 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
                   )}
                 </button>
               )}
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && <p className="text-sm text-red-500 leading-5">{error}</p>}
             </form>
           </div>
 
-          {/* Credentials Card */}
           {credentials && !isFtpCleared && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sm:p-8">
-              <div className="flex items-center justify-between mb-6">
-                <img src={logo} alt="Fotos Logo" className="h-8 object-contain" />
+            <div className="bg-black/95 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-700/50 p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <img src={logo} alt="Fotos Logo" className="h-6 object-contain" />
                 <div className="flex items-center space-x-2">
-                  <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
-                  <span className="text-sm font-medium text-black">Live</span>
+                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-lg shadow-green-400/50"></span>
+                  <span className="text-sm font-medium text-green-400 leading-5">Live</span>
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
                 <div className="flex-shrink-0">
                   <img
                     src="https://cdn-icons-png.flaticon.com/512/10770/10770967.png"
                     alt="Avatar"
-                    className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover"
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-gray-600/80 shadow-lg"
                   />
                 </div>
 
-                <div className="space-y-3 w-full">
-                  <div className="flex items-center justify-between">
-                    <span className="w-24 font-semibold text-black">Host:</span>
-                    <span className="truncate text-black">{credentials.host}</span>
+                <div className="space-y-1 w-full">
+                  <div className="flex items-center justify-between rounded-lg p-2">
+                    <span className="w-16 font-semibold text-white text-sm leading-5">Host:</span>
+                    <span className="truncate text-white font-medium text-sm leading-5">{credentials.host}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="w-24 font-semibold text-black">Username:</span>
-                    <span className="truncate text-black">{credentials.username}</span>
+                  <div className="flex items-center justify-between rounded-lg p-2">
+                    <span className="w-16 font-semibold text-white text-sm leading-5">Username:</span>
+                    <span className="truncate text-white font-medium text-sm leading-5">{credentials.username}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="w-24 font-semibold text-black">Password:</span>
+                  <div className="flex items-center justify-between rounded-lg p-2">
+                    <span className="w-16 font-semibold text-white text-sm leading-5">Password:</span>
                     <div className="flex items-center space-x-2">
-                      <span className="truncate text-black">{credentials.password}</span>
+                      <span className="truncate text-white font-medium text-sm leading-5">{credentials.password}</span>
                       <button
                         onClick={handleRegeneratePassword}
-                        className="p-1.5 bg-white border border-gray-300 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                        className="p-1.5 rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 ease-in-out shadow-md"
                       >
-                        <RefreshCw className="h-4 w-4 text-black" />
+                        <RefreshCw className="h-4 w-4 text-white" />
                       </button>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="w-24 font-semibold text-black">Port:</span>
-                    <span className="text-black">{credentials.port}</span>
+                  <div className="flex items-center justify-between rounded-lg p-2">
+                    <span className="w-16 font-semibold text-white text-sm leading-5">Port:</span>
+                    <span className="text-white text-sm font-medium leading-5">{credentials.port}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="w-24 font-semibold text-black">Mode:</span>
-                    <span className="text-black">{credentials.mode}</span>
+                  <div className="flex items-center justify-between rounded-lg p-2">
+                    <span className="w-16 font-semibold text-white text-sm leading-5">Mode:</span>
+                    <span className="text-white text-sm font-medium leading-5">{credentials.mode}</span>
                   </div>
                 </div>
               </div>
+
               <button
                 onClick={handleCloseConnection}
-                className="w-full mt-6 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                className="w-full mt-6 px-4 py-3 bg-red-600/90 hover:bg-red-500 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400/50 transition-all duration-200 ease-in-out text-sm font-medium leading-5 shadow-lg hover:shadow-red-500/25"
               >
                 Close Connection
               </button>
@@ -447,14 +423,13 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
           )}
         </div>
 
-        {/* Right Side: Live Feed */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sm:p-8">
+        <div className="bg-white/70 rounded-2xl shadow-md border p-4 sm:p-6">
           {formValues.camera && formValues.album && formValues.directory ? (
             <Suspense
               fallback={
-                <div className="text-center py-12">
+                <div className="text-center py-8">
                   <svg
-                    className="animate-spin h-8 w-8 text-black mx-auto"
+                    className="animate-spin h-6 w-6 text-gray-500 mx-auto"
                     viewBox="0 0 24 24"
                   >
                     <circle
@@ -471,16 +446,16 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                     />
                   </svg>
-                  <p className="mt-2 text-gray-500">Loading...</p>
+                  <p className="mt-2 text-gray-600 text-sm leading-5">Loading...</p>
                 </div>
               }
             >
               <LiveFeed reset={credentials === null || isFtpCleared} />
             </Suspense>
           ) : (
-            <div className="flex flex-col items-center justify-center py-12">
+            <div className="flex flex-col items-center justify-center py-8">
               <svg
-                className="h-16 w-16 text-gray-500 mb-4"
+                className="h-12 w-12 text-gray-500 mb-2"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -493,7 +468,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
                   d="M4 16l4-4 4 4 4-4 4 4m-12-8h8m-4-4v8"
                 />
               </svg>
-              <p className="text-gray-500 text-center text-sm">
+              <p className="text-gray-600 text-center text-sm leading-5">
                 Please connect to FTP to view the live feed.
               </p>
             </div>
