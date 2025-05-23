@@ -39,6 +39,7 @@ import { PageLoader, ErrorDisplay } from "../components/common/loaders";
 import axiosInstance from "../utils/api";
 import type { Album, Photo } from "../constants/type";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchAlbum, fetchPhotos } from "@/lib/actions";
 
 interface UploadFile {
   file: File;
@@ -46,16 +47,6 @@ interface UploadFile {
   caption: string;
   progress: number;
 }
-
-const fetchAlbum = async (id: string) => {
-  const { data } = await axiosInstance.get<Album>(`/api/albums/${id}`);
-  return data;
-};
-
-const fetchPhotos = async (id: string) => {
-  const { data } = await axiosInstance.get<Photo[]>(`/api/photos/album/${id}`);
-  return data;
-};
 
 const PhotoCard = memo(({ photo, isSelectionMode, selectedPhotos, togglePhotoSelection, handleDeletePhoto }: {
   photo: Photo;

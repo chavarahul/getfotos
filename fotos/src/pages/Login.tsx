@@ -10,6 +10,7 @@ import axiosInstance from "../utils/api";
 import debounce from "lodash.debounce";
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { useAuth } from "@/hooks/useAuth";
 
 interface User {
   id: string;
@@ -41,6 +42,12 @@ const Login = () => {
   const [isElectron, setIsElectron] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+
+
+  useEffect(() => {
+    if (isAuthenticated) navigate("/dashboard");
+  }, [isAuthenticated, navigate]);
 
   useEffect(() => {
     const checkElectron = async () => {
@@ -60,12 +67,6 @@ const Login = () => {
     };
 
     checkElectron();
-
-    const token = localStorage.getItem("token");
-    if (token) {
-      console.log("Token found, redirecting to /dashboard");
-      navigate("/dashboard");
-    }
   }, [navigate]);
 
   const handleGoogleLogin = useCallback(
@@ -109,7 +110,8 @@ const Login = () => {
         }
 
         localStorage.setItem("token", response.data.token);
-        toast.success("Login Successful")
+        toast.success("Login Successful");
+        console.log(response.data.token)
         navigate("/dashboard");
       } catch (err) {
         console.error("Error during Google sign-in:", err);

@@ -100,7 +100,6 @@ function createWindow() {
   mainWindow.maximize();
 
   const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
-  // const startUrl = "http://localhost:3000"
   console.log(startUrl);
 
   mainWindow.loadURL(startUrl).catch((err) => {
@@ -108,7 +107,6 @@ function createWindow() {
   });
 
   mainWindow.webContents.openDevTools({ mode: "detach" });
-
 
   mainWindow.on("close", () => {
     mainWindow = null;
@@ -122,14 +120,31 @@ function createWindow() {
   });
 }
 
-const generateNumericPassword = () => {
-  return Math.floor(1000 + Math.random() * 9000).toString();
+// Generate a 5-character password with at least one lowercase letter and one number
+const generatePassword = () => {
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  const allChars = letters + numbers;
+  let password = '';
+
+  // Ensure at least one letter and one number
+  password += letters[Math.floor(Math.random() * letters.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+
+  // Fill the remaining 3 characters
+  for (let i = 0; i < 3; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // Shuffle the password
+  password = password.split('').sort(() => Math.random() - 0.5).join('');
+  return password;
 };
 
-async function startFtpServer(username = "user", directory, albumId, token, port = FTP_PORT) {
-  if (!directory || !albumId || !token) {
+async function startFtpServer(username, directory, albumId, token, port = FTP_PORT) {
+  if (!username || !directory || !albumId || !token) {
     logger.error("Missing parameters for FTP server", { username, directory, albumId });
-    return { error: "Directory, album ID, and token are required" };
+    return { error: "Username, directory, album ID, and token are required" };
   }
 
   const absoluteDir = path.resolve(directory);
@@ -145,23 +160,32 @@ async function startFtpServer(username = "user", directory, albumId, token, port
   }
 
   let password;
+  // Check localStorage first
   const savedCredentials = await mainWindow.webContents.executeJavaScript('localStorage.getItem("ftpCredentials")');
   if (savedCredentials) {
     const creds = JSON.parse(savedCredentials);
     if (creds.username === username && creds.password) {
       password = creds.password;
+      logger.info("Reusing password from localStorage", { username });
     }
   }
 
+  // Check userCredentials if no password from localStorage
   const existingCredentials = userCredentials.get(username);
-  if (existingCredentials?.password) {
+  if (existingCredentials?.password && !password) {
     password = existingCredentials.password;
-  } else if (password) {
+    logger.info("Reusing password from userCredentials", { username });
+  }
+
+  // Generate new password if none exists
+  if (!password) {
+    password = generatePassword();
     userCredentials.set(username, { password });
+    logger.info("Generated new password", { username, password });
   } else {
-    password = generateNumericPassword();
     userCredentials.set(username, { password });
   }
+
   directories.set(username, absoluteDir);
   albumIds.set(username, albumId);
 
@@ -236,7 +260,7 @@ async function startFtpServer(username = "user", directory, albumId, token, port
           } catch (error) {
             logger.warn(`Attempt ${i + 1} failed`, { error: error.message });
             if (i === retries - 1) throw error;
-            const delay = baseDelay * Math.pow(2, i); // Exponential backoff
+            const delay = baseDelay * Math.pow(2, i);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
@@ -301,7 +325,6 @@ async function startFtpServer(username = "user", directory, albumId, token, port
           return;
         }
 
-
         let cloudinaryUrl;
         try {
           const result = await retry(() =>
@@ -320,7 +343,6 @@ async function startFtpServer(username = "user", directory, albumId, token, port
             stack: error.stack,
             cloudinaryResponse: error.response?.data,
           });
-          // Fallback to JPEG
           try {
             const result = await retry(() =>
               cloudinary.uploader.upload(filePath, {
@@ -660,7 +682,7 @@ ipcMain.handle("close-ftp", async () => {
 
 ipcMain.handle("regenerate-ftp-password", async (event, username) => {
   logger.info("Regenerating FTP password", { username });
-  const password = generateNumericPassword();
+  const password = generatePassword();
   userCredentials.set(username, { password });
   logger.info("New password generated", { username, password });
 
@@ -885,7 +907,6 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
 });
 
-
 const notifyRendererToClearCredentials = () => {
   const windows = BrowserWindow.getAllWindows();
   windows.forEach((win) => {
@@ -933,6 +954,6 @@ app.on("before-quit", async () => {
 ipcMain.on("exit-app", () => {
   logger.info("Received exit-app message from renderer, closing app");
   if (mainWindow) {
-    mainWindow.close(); 
+    mainWindow.close();
   }
 });

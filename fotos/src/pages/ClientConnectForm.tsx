@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -10,7 +12,7 @@ import logo from "/assets/monotype-white.svg";
 interface ClientConnectFormProps {
   cameras: Camera[];
   albums: { id: string; name: string }[];
-  username?: string;
+  username: string; // Removed default "user"
 }
 
 interface ElectronAPI {
@@ -44,7 +46,7 @@ declare global {
 const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
   cameras,
   albums,
-  username = "user",
+  username,
 }) => {
   const navigate = useNavigate();
   const [credentials, setCredentials] = useState<ConnectionDetails | null>(null);
@@ -60,11 +62,10 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
     directory: "",
   });
   const [isFtpCleared, setIsFtpCleared] = useState<boolean>(false);
+  // console.log(username)
 
-  // Load persisted state on mount
   useEffect(() => {
     const loadPersistedState = async () => {
-      // Load form values from localStorage
       let initialFormValues;
       const savedFormValues = localStorage.getItem("formValues");
       console.log("Loading form values from localStorage:", savedFormValues);
@@ -72,8 +73,6 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
       if (savedFormValues) {
         try {
           initialFormValues = JSON.parse(savedFormValues);
-          console.log("Parsed form values from localStorage:", initialFormValues);
-          // Ensure no null/undefined values
           initialFormValues = {
             camera: initialFormValues.camera || "",
             album: initialFormValues.album || "",
@@ -84,45 +83,30 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
           initialFormValues = { camera: "", album: "", directory: "" };
         }
       } else {
-        console.log("No form values in localStorage, using default values");
         initialFormValues = { camera: "", album: "", directory: "" };
         localStorage.setItem("formValues", JSON.stringify(initialFormValues));
-        console.log("Saved initial form values to localStorage:", initialFormValues);
       }
 
       setFormValues(initialFormValues);
 
-      // Load FTP credentials, prioritizing backend state
       try {
         const backendCredentials = await window.electronAPI.getFtpCredentials();
-        console.log("Backend FTP credentials:", backendCredentials);
-
         const ftpCleared = localStorage.getItem("ftpCleared") === "true";
-        console.log("FTP cleared flag:", ftpCleared);
         setIsFtpCleared(ftpCleared);
 
-        if (backendCredentials.length > 0) {
+        if (backendCredentials.length > 0 && !ftpCleared) {
           const creds = backendCredentials[0];
-          // If backend returns credentials, but ftpCleared is true, reset everything
-          if (ftpCleared) {
-            console.log("ftpCleared is true, resetting credentials despite backend response");
-            setCredentials(null);
-            setIsFtpCleared(true);
-            localStorage.removeItem("ftpCredentials");
-            localStorage.setItem("ftpCleared", "true");
-            localStorage.removeItem("liveFeedImages");
-            // Optionally, call resetFtpCredentials to clear backend state
-            await window.electronAPI.resetFtpCredentials();
-          } else {
+          if (creds.username === username) {
             setCredentials(creds);
-            setIsFtpCleared(false);
             localStorage.setItem("ftpCredentials", JSON.stringify(creds));
             localStorage.setItem("ftpCleared", "false");
-            console.log("Set FTP credentials from backend:", creds);
+          } else {
+            await window.electronAPI.resetFtpCredentials();
+            setCredentials(null);
+            localStorage.removeItem("ftpCredentials");
+            localStorage.setItem("ftpCleared", "true");
           }
         } else {
-          // Backend indicates no active FTP server, so clear localStorage and state
-          console.log("No backend credentials, resetting localStorage and state");
           setCredentials(null);
           setIsFtpCleared(true);
           localStorage.removeItem("ftpCredentials");
@@ -141,37 +125,28 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
     };
 
     loadPersistedState();
-  }, []); // No dependencies, runs only on mount
+  }, [username]);
 
-  // Listen for IPC message to clear FTP credentials and localStorage
   useEffect(() => {
     const handleClearCredentials = (data: { message: string }) => {
       console.log("Received IPC message to clear FTP credentials:", data.message);
-      // Clear FTP-related items from localStorage
       localStorage.removeItem("ftpCredentials");
       localStorage.setItem("ftpCleared", "true");
       localStorage.removeItem("liveFeedImages");
-      // Reset component state
       setCredentials(null);
       setIsFtpCleared(true);
       toast.info("FTP connection closed by app shutdown");
     };
 
-    // Register the IPC listener
     window.electronAPI.onClearFtpCredentials(handleClearCredentials);
-
-    // Cleanup the listener on component unmount
     return () => {
       window.electronAPI.removeClearFtpCredentialsListener(handleClearCredentials);
     };
   }, []);
 
   const handleValueChange = useCallback((field: string, value: string) => {
-    console.log(`Updating ${field}: ${value}`);
     setFormValues((prev) => {
       const updatedValues = { ...prev, [field]: value };
-      // Save to localStorage immediately on change
-      console.log("Saving updated form values to localStorage:", updatedValues);
       localStorage.setItem("formValues", JSON.stringify(updatedValues));
       return updatedValues;
     });
@@ -183,7 +158,6 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
       if (path) {
         handleValueChange("directory", path);
         toast.success(`Selected folder: ${path}`);
-        console.log(`Selected directory: ${path}`);
       } else {
         toast.warning("No folder selected.");
       }
@@ -195,23 +169,22 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
 
   const handleRegeneratePassword = useCallback(async () => {
     try {
-      const result = await window.electronAPI.regenerateFtpPassword("user");
+      const result = await window.electronAPI.regenerateFtpPassword(username);
       if (result.password) {
         setCredentials((prev) =>
           prev ? { ...prev, password: result.password } : prev
         );
         localStorage.setItem(
           "ftpCredentials",
-          JSON.stringify({ ...credentials, password: result.password })
+          JSON.stringify({ ...credentials, username, password: result.password })
         );
         toast.success("Password regenerated successfully");
-        console.log("New password:", result.password);
       }
     } catch (err: any) {
       console.error("Regenerate password error:", err);
       toast.error("Failed to regenerate password");
     }
-  }, [credentials]);
+  }, [credentials, username]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -239,19 +212,17 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         return;
       }
 
-      console.log("Submitting:", { username: "user", directory, albumId: album });
-
       try {
         const savedCredentials = localStorage.getItem("ftpCredentials");
         let credentials = savedCredentials ? JSON.parse(savedCredentials) : null;
 
-        if (!credentials || credentials.username !== "user") {
+        if (credentials && credentials.username !== username) {
           await window.electronAPI.resetFtpCredentials();
-          console.log("Credentials reset successfully");
+          credentials = null;
         }
 
         const data = await window.electronAPI.startFtp({
-          username: "user",
+          username,
           directory,
           albumId: album,
           token,
@@ -266,28 +237,23 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         localStorage.setItem("ftpCredentials", JSON.stringify(data));
         localStorage.setItem("ftpCleared", "false");
         toast.success("FTP server started successfully");
-        console.log("FTP credentials received:", data);
-
         navigate(`/connect`, { replace: true });
       } catch (err: any) {
         const message = err.message || "Failed to start FTP server";
         setError(message);
         toast.error(message);
-        console.error("FTP start error:", message);
       } finally {
         setLoading(false);
       }
     },
-    [formValues, navigate]
+    [formValues, navigate, username]
   );
 
   const handleCloseConnection = useCallback(async () => {
     try {
       await window.electronAPI.closeFtp();
-      console.log("FTP connection closed");
       setCredentials(null);
       setIsFtpCleared(true);
-      localStorage.removeItem("ftpCredentials");
       localStorage.setItem("ftpCleared", "true");
       localStorage.removeItem("liveFeedImages");
       navigate(`/connect`, { replace: true });
@@ -297,7 +263,6 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
       toast.error("Failed to close connection");
       setCredentials(null);
       setIsFtpCleared(true);
-      localStorage.removeItem("ftpCredentials");
       localStorage.setItem("ftpCleared", "true");
       localStorage.removeItem("liveFeedImages");
       navigate(`/connect`, { replace: true });
@@ -305,170 +270,217 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
   }, [navigate]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-      {/* Left Side: Form and Credentials */}
-      <div className="space-y-6">
-        {/* Form Container */}
-        <div className="bg-white/50 border border-gray-200 rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Setup FTP Connection</h3>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Camera Selection */}
-            <div className="space-y-2">
-              <label htmlFor="camera" className="block text-sm font-medium text-gray-700">
-                Select Camera
-              </label>
-              <select
-                id="camera"
-                value={formValues.camera}
-                onChange={(e) => handleValueChange("camera", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500 sm:text-sm"
-              >
-                <option value="" disabled>
-                  Choose a camera
-                </option>
-                {cameras.map((camera) => (
-                  <option key={camera.id} value={camera.id}>
-                    {camera.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Album Selection */}
-            <div className="space-y-2">
-              <label htmlFor="album" className="block text-sm font-medium text-gray-700">
-                Select Album
-              </label>
-              <select
-                id="album"
-                value={formValues.album}
-                onChange={(e) => handleValueChange("album", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500 sm:text-sm"
-              >
-                <option value="" disabled>
-                  Choose an album
-                </option>
-                {albums.map((album) => (
-                  <option key={album.id} value={album.id}>
-                    {album.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Directory Input */}
-            <div className="space-y-2">
-              <label htmlFor="directory" className="block text-sm font-medium text-gray-700">
-                Select Local Directory
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  id="directory"
-                  placeholder="Select or enter directory path (e.g., C:\\Users\\chava\\Pictures)"
-                  value={formValues.directory}
-                  onChange={(e) => handleValueChange("directory", e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500 sm:text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={openDirectoryPicker}
-                  className="w-24 px-3 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-500"
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left Side: Form and Credentials */}
+        <div className="space-y-6">
+          {/* Form Container */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sm:p-8">
+            <h3 className="text-2xl font-semibold text-black mb-6">Setup FTP Connection</h3>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Camera Selection */}
+              <div className="space-y-2">
+                <label htmlFor="camera" className="block text-sm font-medium text-black">
+                  Select Camera
+                </label>
+                <select
+                  id="camera"
+                  value={formValues.camera}
+                  onChange={(e) => handleValueChange("camera", e.target.value)}
+                  className="w-full px-4 py-2 bg-white text-black border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black transition-colors"
                 >
-                  Browse
-                </button>
+                  <option value="" disabled>
+                    Choose a camera
+                  </option>
+                  {cameras.map((camera) => (
+                    <option key={camera.id} value={camera.id}>
+                      {camera.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              {formValues.directory && (
-                <p className="text-sm text-gray-500">Selected: {formValues.directory}</p>
-              )}
-            </div>
 
-            {/* Conditionally render Connect to FTP button */}
-            {(!credentials || isFtpCleared) && (
+              {/* Album Selection */}
+              <div className="space-y-2">
+                <label htmlFor="album" className="block text-sm font-medium text-black">
+                  Select Album
+                </label>
+                <select
+                  id="album"
+                  value={formValues.album}
+                  onChange={(e) => handleValueChange("album", e.target.value)}
+                  className="w-full px-4 py-2 bg-white text-black border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                >
+                  <option value="" disabled>
+                    Choose an album
+                  </option>
+                  {albums.map((album) => (
+                    <option key={album.id} value={album.id}>
+                      {album.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Directory Input */}
+              <div className="space-y-2">
+                <label htmlFor="directory" className="block text-sm font-medium text-black">
+                  Select Local Directory
+                </label>
+                <div className="flex items-center space-x-3">
+                  <input
+                    id="directory"
+                    placeholder="Select or enter directory path (e.g., C:\Users\chava\Pictures)"
+                    value={formValues.directory}
+                    onChange={(e) => handleValueChange("directory", e.target.value)}
+                    className="flex-1 px-4 py-2 bg-white text-black border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={openDirectoryPicker}
+                    className="px-4 py-2 bg-white text-black border border-gray-300 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                  >
+                    Browse
+                  </button>
+                </div>
+                {formValues.directory && (
+                  <p className="text-sm text-gray-500">Selected: {formValues.directory}</p>
+                )}
+              </div>
+
+              {/* Connect to FTP Button */}
+              {(!credentials || isFtpCleared) && (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-black disabled:opacity-50 transition-colors"
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center">
+                      <svg
+                        className="animate-spin h-5 w-5 mr-2 text-white"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                        />
+                      </svg>
+                      Connecting...
+                    </span>
+                  ) : (
+                    "Connect to FTP"
+                  )}
+                </button>
+              )}
+              {error && <p className="text-sm text-red-500">{error}</p>}
+            </form>
+          </div>
+
+          {/* Credentials Card */}
+          {credentials && !isFtpCleared && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sm:p-8">
+              <div className="flex items-center justify-between mb-6">
+                <img src={logo} alt="Fotos Logo" className="h-8 object-contain" />
+                <div className="flex items-center space-x-2">
+                  <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+                  <span className="text-sm font-medium text-black">Live</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6">
+                <div className="flex-shrink-0">
+                  <img
+                    src="https://cdn-icons-png.flaticon.com/512/10770/10770967.png"
+                    alt="Avatar"
+                    className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover"
+                  />
+                </div>
+
+                <div className="space-y-3 w-full">
+                  <div className="flex items-center justify-between">
+                    <span className="w-24 font-semibold text-black">Host:</span>
+                    <span className="truncate text-black">{credentials.host}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-24 font-semibold text-black">Username:</span>
+                    <span className="truncate text-black">{credentials.username}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-24 font-semibold text-black">Password:</span>
+                    <div className="flex items-center space-x-2">
+                      <span className="truncate text-black">{credentials.password}</span>
+                      <button
+                        onClick={handleRegeneratePassword}
+                        className="p-1.5 bg-white border border-gray-300 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
+                      >
+                        <RefreshCw className="h-4 w-4 text-black" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-24 font-semibold text-black">Port:</span>
+                    <span className="text-black">{credentials.port}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-24 font-semibold text-black">Mode:</span>
+                    <span className="text-black">{credentials.mode}</span>
+                  </div>
+                </div>
+              </div>
               <button
-                type="submit"
-                disabled={loading}
-                className="w-full px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700 disabled:opacity-50"
+                onClick={handleCloseConnection}
+                className="w-full mt-6 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-black transition-colors"
               >
-                {loading ? "Connecting..." : "Connect to FTP"}
+                Close Connection
               </button>
-            )}
-            {error && <p className="text-sm text-red-600">{error}</p>}
-          </form>
+            </div>
+          )}
         </div>
 
-        {/* Credentials Card (Visible when connected) */}
-        {credentials && !isFtpCleared && (
-          <div className="bg-black rounded-xl shadow-lg p-6 w-full text-white">
-            <div className="flex items-center justify-between mb-6">
-              <img src={logo} alt="Fotos Logo" className="h-8 object-contain" />
-              <div className="flex items-center space-x-1">
-                <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-                <span className="text-sm font-medium">Live</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-around">
-              <div>
-                <img
-                  src="https://cdn-icons-png.flaticon.com/512/10770/10770967.png"
-                  alt="Avatar"
-                  className="w-32 h-32"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center">
-                  <span className="w-24 font-semibold">Host:</span>
-                  <span>{credentials.host}</span>
+        {/* Right Side: Live Feed */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sm:p-8">
+          {formValues.camera && formValues.album && formValues.directory ? (
+            <Suspense
+              fallback={
+                <div className="text-center py-12">
+                  <svg
+                    className="animate-spin h-8 w-8 text-black mx-auto"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                  <p className="mt-2 text-gray-500">Loading...</p>
                 </div>
-                <div className="flex items-center">
-                  <span className="w-24 font-semibold">Username:</span>
-                  <span>{credentials.username}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="w-24 font-semibold">Password:</span>
-                  <span className="flex items-center">
-                    {credentials.password}
-                    <button
-                      onClick={handleRegeneratePassword}
-                      className="ml-2 p-1 hover:text-gray-300 focus:outline-none"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </button>
-                  </span>
-                </div>
-                <div className="flex items-center">
-                  <span className="w-24 font-semibold">Port:</span>
-                  <span>{credentials.port}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="w-24 font-semibold">Mode:</span>
-                  <span>{credentials.mode}</span>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={handleCloseConnection}
-              className="w-full mt-6 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+              }
             >
-              Close Connection
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Right Side: Live Feed */}
-      <div>
-        {formValues.camera && formValues.album && formValues.directory ? (
-          <Suspense fallback={<div className="text-center py-6">Loading...</div>}>
-            <LiveFeed reset={credentials === null || isFtpCleared} />
-          </Suspense>
-        ) : (
-          <div className="border border-gray-200 rounded-lg shadow-sm p-6 bg-white">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Live Image Feed</h3>
-            <div className="flex flex-col items-center justify-center py-6">
+              <LiveFeed reset={credentials === null || isFtpCleared} />
+            </Suspense>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12">
               <svg
-                className="h-12 w-12 text-gray-400 mb-4"
+                className="h-16 w-16 text-gray-500 mb-4"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -481,12 +493,12 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
                   d="M4 16l4-4 4 4 4-4 4 4m-12-8h8m-4-4v8"
                 />
               </svg>
-              <p className="text-gray-500 text-center">
+              <p className="text-gray-500 text-center text-sm">
                 Please connect to FTP to view the live feed.
               </p>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

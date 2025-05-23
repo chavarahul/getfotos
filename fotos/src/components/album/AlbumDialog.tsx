@@ -25,16 +25,17 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
   const [date, setDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // Fetch user data to get userId for invalidation
   const { data: user } = useQuery({
     queryKey: ["user"],
     queryFn: fetchUser,
     staleTime: 1000 * 60 * 5,
     retry: 1,
   });
+
+
+  console.log(user)
 
   const isEditMode = !!albumToEdit;
 
