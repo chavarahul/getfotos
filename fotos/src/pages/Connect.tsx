@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { PageLoader, ErrorDisplay } from "../components/common/loaders";
 import ClientConnectForm from "./ClientConnectForm";
-import type {  Camera } from "../constants/type";
+import type { Camera } from "../constants/type";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../components/ui/button";
@@ -34,15 +34,15 @@ const Connect: React.FC = () => {
     queryFn: fetchUser,
     enabled: !!token,
     retry: 3,
-    staleTime: 1000 * 60 * 5, 
+    staleTime: 1000 * 60 * 5,
   });
 
   const { data: albums = [], isLoading: isAlbumsLoading, error: albumsError, refetch: refetchAlbums } = useQuery({
     queryKey: ["albums", user?.id],
     queryFn: () => fetchAlbums(user!.id),
     enabled: !!user?.id,
-    staleTime: 1000 * 30, 
-    refetchInterval: user?.id ? 1000 * 5 : undefined, 
+    staleTime: 1000 * 30,
+    refetchInterval: user?.id ? 1000 * 5 : undefined,
     retry: 3,
   });
 
@@ -91,7 +91,7 @@ const Connect: React.FC = () => {
 
   if (isUserLoading || isAlbumsLoading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="min-h-screen bg-[#F5F2ED] flex items-center justify-center">
         <PageLoader />
       </div>
     );

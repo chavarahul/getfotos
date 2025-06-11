@@ -7,7 +7,7 @@ import { LogOut, Menu } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "../../components/ui/sheet";
 import { toast } from "sonner";
 import { Toaster } from "../../components/ui/sonner";
-import Logo from "/assets/monotype-white.svg";
+import Logo from "/assets/monotype-black.svg";
 import NavLinks from "../../components/common/NavLinks";
 import axiosInstance from "../../utils/api";
 import { PageLoader } from "./loaders";
@@ -73,8 +73,7 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="w-full overflow-x-hidden">
-      {/* Fixed Sidebar */}
-      <div className="hidden md:block fixed top-0 left-0 bottom-0 bg-black text-white h-screen w-[220px] lg:w-[280px] z-40 border-r border-white/10">
+      <div className="hidden md:block fixed top-0 left-0 bottom-0 bg-white text-black h-screen w-[220px] lg:w-[280px] z-40 border-r border-white/10">
         <div className="flex flex-col h-full justify-between">
           <div>
             <div className="flex h-14 w-full items-center px-4 lg:h-[60px] lg:px-6 border-b border-white/10">
@@ -91,24 +90,24 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
             </nav>
           </div>
           <div>
-            <div className="flex items-center gap-3 p-4 border-t border-white/10">
+            <div className="flex items-center gap-3 p-4 border-t border-black/10">
               <img
                 src={user.image || "/default-avatar.png"}
                 alt={user.name || "User"}
                 className="rounded-full object-cover w-[40px] h-[40px]"
               />
               <div className="flex flex-col">
-                <span className="text-sm font-medium text-white">
+                <span className="text-sm font-medium ">
                   {user.name || "User"}
                 </span>
-                <span className="text-xs text-white/70">
+                <span className="text-xs text-black/70">
                   {user.email || "No email"}
                 </span>
               </div>
             </div>
             <div className="flex items-center justify-center w-full flex-1"> 
               <Button
-                className="w-11/12 mb-5 cursor-pointer mx-auto text-center rounded-[5px] bg-white text-black hover:text-black hover:bg-white/80"
+                className="w-11/12 mb-5 cursor-pointer mx-auto text-center rounded-[5px] bg-black text-white hover:bg-black/80"
                 onClick={handleSignOut}
               >
                 <LogOut className="mr-2 h-4 w-4" />
@@ -119,9 +118,8 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
         </div>
       </div>
       
-      {/* Main Content with padding to account for sidebar */}
-      <div className="md:ml-[220px] lg:ml-[280px]">
-        <header className="hidden h-14 max-md:flex items-center gap-4 bg-gray-100 px-4 lg:h-[60px] lg:px-6 sticky top-0 z-30">
+     <div className="md:ml-[220px] lg:ml-[280px]">
+        <header className="hidden max-md:h-14 h-0 max-md:flex items-center gap-4 bg-gray-100 px-4 max-lg:h-[60px] lg:px-6 sticky top-0 z-30">
           <Sheet>
             <SheetTrigger asChild>
               <Button className="md:hidden shrink-0" size="icon" variant="outline">
@@ -169,7 +167,7 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
             </SheetContent>
           </Sheet>
         </header>
-        <main className="min-h-screen bg-gray-100 w-full">{children}</main>
+        <main className="min-h-screen bg-[#F5F2ED] w-full">{children}</main>
       </div>
 
       <Toaster richColors closeButton />

@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { Home, Image as ImageIcon, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
-interface NavLinksProps { }
+interface NavLinksProps {}
 
 interface NavLinkItem {
   path: string;
@@ -22,10 +22,9 @@ export default function NavLinks(_props: NavLinksProps = {}) {
 
   const linkClasses = (path: string, isActive: boolean): string =>
     clsx(
-      'flex items-center gap-3 rounded-[6px] px-3 py-2 text-white hover:bg-white/10 transition-colors',
-      { 'bg-white/20': isActive || pathname === path }
+      'flex items-center gap-3 rounded-[6px] px-3 py-2 text-black hover:bg-gray-200/30 transition-colors',
+      { 'bg-gray-300/40': isActive || pathname === path }
     );
-
 
   return (
     <>

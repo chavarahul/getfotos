@@ -21,7 +21,7 @@ const Dashboard: React.FC = () => {
 
   if (isLoading && !albums.length) {
     return (
-      <div className="h-screen bg-gray-100 flex items-center justify-center -mt-10">
+      <div className="h-screen bg-[#F5F2ED] flex items-center justify-center -mt-10">
         <PageLoader />
       </div>
     );
@@ -36,7 +36,7 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-[#F5F2ED]">
       <div className="mx-auto max-w-7xl p-6">
         <AlbumHeader />
         {albums.length === 0 ? (

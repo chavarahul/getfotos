@@ -31,6 +31,7 @@
     "cloudinary": "^2.6.1",
     "clsx": "^2.1.1",
     "dexie": "^4.0.11",
+    "dns": "^0.2.2",
     "dot-env": "^0.0.1",
     "dotenv": "^16.5.0",
     "framer-motion": "^12.12.1",

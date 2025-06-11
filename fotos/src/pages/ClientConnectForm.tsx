@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback} from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Suspense } from "react";
@@ -31,9 +31,10 @@ interface ElectronAPI {
     password: string;
   }) => Promise<{ valid: boolean; expected?: string }>;
   regenerateFtpPassword: (username: string) => Promise<{ password: string }>;
-  onImageStream: (callback: (data: { action: string; imageUrl: string }) => void) => void;
-  removeImageStreamListener: (callback: (data: { action: string; imageUrl: string }) => void) => void;
-  closeFtp: () => Promise<void>;
+  onImageStream: (callback: (data: { action: string; imageUrl?: string }) => void) => void;
+  removeImageStreamListener: (callback: (data: { action: string; imageUrl?: string }) => void) => void;
+  closeFtp: () => Promise<{ message: string }>;
+  checkFtpStatus: () => Promise<{ isRunning: boolean; credentials: ConnectionDetails[] }>;
   onClearFtpCredentials: (callback: (data: { message: string }) => void) => void;
   removeClearFtpCredentialsListener: (callback: (data: { message: string }) => void) => void;
 }
@@ -43,7 +44,6 @@ declare global {
     electronAPI: ElectronAPI;
   }
 }
-
 
 const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
   cameras,
@@ -63,13 +63,69 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
     album: "",
     directory: "",
   });
-  const [isFtpCleared, setIsFtpCleared] = useState<boolean>(false);
+  const [isFtpCleared, setIsFtpCleared] = useState<boolean>(true);
+
+  const loadCredentials = useCallback(async () => {
+    try {
+      const savedCredentials = localStorage.getItem("ftpCredentials");
+      const ftpCleared = localStorage.getItem("ftpCleared") === "true";
+
+      // Check backend status first
+      const { isRunning, credentials: backendCredentials } = await window.electronAPI.checkFtpStatus();
+      // console.log("FTP server status:", { isRunning, backendCredentials });
+
+      // If server is running, use backend credentials
+      if (isRunning && backendCredentials.length > 0) {
+        const creds = backendCredentials[0]; // Use first available credentials
+        setCredentials(creds);
+        localStorage.setItem("ftpCredentials", JSON.stringify(creds));
+        localStorage.setItem("ftpCleared", "false");
+        setIsFtpCleared(false);
+        // console.log("Set backend credentials:", creds);
+        return;
+      }
+
+      // If no backend credentials, check localStorage
+      if (savedCredentials && !ftpCleared) {
+        const parsedCreds = JSON.parse(savedCredentials);
+        // Validate credentials without strict username check
+        const { valid } = await window.electronAPI.testFtpCredentials({
+          username: parsedCreds.username,
+          password: parsedCreds.password,
+        });
+        if (valid) {
+          setCredentials(parsedCreds);
+          setIsFtpCleared(false);
+          localStorage.setItem("ftpCleared", "false");
+          // console.log("Set valid localStorage credentials:", parsedCreds);
+        } else {
+          setCredentials(null);
+          setIsFtpCleared(true);
+          localStorage.removeItem("ftpCredentials");
+          localStorage.setItem("ftpCleared", "true");
+          // console.log("Invalid credentials in localStorage, cleared");
+        }
+      } else {
+        setCredentials(null);
+        setIsFtpCleared(true);
+        localStorage.setItem("ftpCleared", "true");
+        // console.log("No valid credentials found");
+      }
+    } catch (err) {
+      console.error("Failed to load credentials:", err);
+      toast.error("Failed to load FTP server status");
+      if (!credentials) {
+        setIsFtpCleared(true);
+        localStorage.setItem("ftpCleared", "true");
+      }
+    }
+  }, [credentials]);
 
   useEffect(() => {
     const loadPersistedState = async () => {
       let initialFormValues;
       const savedFormValues = localStorage.getItem("formValues");
-      console.log("Loading form values from localStorage:", savedFormValues);
+      // console.log("Loading form values from localStorage:", savedFormValues);
 
       if (savedFormValues) {
         try {
@@ -87,63 +143,13 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         initialFormValues = { camera: "", album: "", directory: "" };
         localStorage.setItem("formValues", JSON.stringify(initialFormValues));
       }
-
       setFormValues(initialFormValues);
 
-      try {
-        const backendCredentials = await window.electronAPI.getFtpCredentials();
-        const ftpCleared = localStorage.getItem("ftpCleared") === "true";
-        setIsFtpCleared(ftpCleared);
-
-        if (backendCredentials.length > 0 && !ftpCleared) {
-          const creds = backendCredentials[0];
-          if (creds.username === username) {
-            setCredentials(creds);
-            localStorage.setItem("ftpCredentials", JSON.stringify(creds));
-            localStorage.setItem("ftpCleared", "false");
-          } else {
-            await window.electronAPI.resetFtpCredentials();
-            setCredentials(null);
-            localStorage.removeItem("ftpCredentials");
-            localStorage.setItem("ftpCleared", "true");
-          }
-        } else {
-          setCredentials(null);
-          setIsFtpCleared(true);
-          localStorage.removeItem("ftpCredentials");
-          localStorage.setItem("ftpCleared", "true");
-          localStorage.removeItem("liveFeedImages");
-        }
-      } catch (err) {
-        console.error("Failed to fetch FTP credentials from backend:", err);
-        toast.error("Failed to load FTP credentials");
-        setCredentials(null);
-        setIsFtpCleared(true);
-        localStorage.removeItem("ftpCredentials");
-        localStorage.setItem("ftpCleared", "true");
-        localStorage.removeItem("liveFeedImages");
-      }
+      await loadCredentials();
     };
 
     loadPersistedState();
-  }, [username]);
-
-  useEffect(() => {
-    const handleClearCredentials = (data: { message: string }) => {
-      console.log("Received IPC message to clear FTP credentials:", data.message);
-      localStorage.removeItem("ftpCredentials");
-      localStorage.setItem("ftpCleared", "true");
-      localStorage.removeItem("liveFeedImages");
-      setCredentials(null);
-      setIsFtpCleared(true);
-      toast.info("FTP connection closed by app shutdown");
-    };
-
-    window.electronAPI.onClearFtpCredentials(handleClearCredentials);
-    return () => {
-      window.electronAPI.removeClearFtpCredentialsListener(handleClearCredentials);
-    };
-  }, []);
+  }, [loadCredentials]);
 
   const handleValueChange = useCallback((field: string, value: string) => {
     setFormValues((prev) => {
@@ -173,7 +179,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
       const result = await window.electronAPI.regenerateFtpPassword(username);
       if (result.password) {
         setCredentials((prev) =>
-          prev ? { ...prev, password: result.password } : prev
+          prev ? { ...prev, password: result.password } : null
         );
         localStorage.setItem(
           "ftpCredentials",
@@ -203,7 +209,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         return;
       }
 
-      const pathRegex = /^(?:[a-zA-Z]:[\\/][^\0<>:;"|?*]+|\/[\w\/.-]+)$/;
+      const pathRegex = /^(?:[a-zA-Z]:[\\/][^\0<>*:"|?*]+|\/[\w\/.-]+)$/;
       if (!pathRegex.test(directory)) {
         setError("Invalid directory path");
         toast.error(
@@ -215,11 +221,14 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
 
       try {
         const savedCredentials = localStorage.getItem("ftpCredentials");
-        let credentials = savedCredentials ? JSON.parse(savedCredentials) : null;
+        let existingCredentials = savedCredentials ? JSON.parse(savedCredentials) : null;
 
-        if (credentials && credentials.username !== username) {
-          await window.electronAPI.resetFtpCredentials();
-          credentials = null;
+        if (existingCredentials) {
+          await window.electronAPI.closeFtp();
+          localStorage.removeItem("ftpCredentials");
+          localStorage.setItem("ftpCleared", "true");
+          setIsFtpCleared(true);
+          existingCredentials = null;
         }
 
         const data = await window.electronAPI.startFtp({
@@ -238,7 +247,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         localStorage.setItem("ftpCredentials", JSON.stringify(data));
         localStorage.setItem("ftpCleared", "false");
         toast.success("FTP server started successfully");
-        navigate(`/connect`, { replace: true });
+        navigate(`/connect`, { replace: false });
       } catch (err: any) {
         const message = err.message || "Failed to start FTP server";
         setError(message);
@@ -253,29 +262,32 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
   const handleCloseConnection = useCallback(async () => {
     try {
       await window.electronAPI.closeFtp();
+      console.log("FTP server closed");
       setCredentials(null);
       setIsFtpCleared(true);
-      localStorage.setItem("ftpCleared", "true");
+      localStorage.removeItem("ftpCredentials");
       localStorage.removeItem("liveFeedImages");
-      navigate(`/connect`, { replace: true });
-      toast.success("Connection closed");
+      localStorage.setItem("ftpCleared", "true");
+      toast.success("Connection closed successfully");
+      navigate("/connect", { replace: true });
     } catch (err: any) {
       console.error("Error closing connection:", err);
       toast.error("Failed to close connection");
       setCredentials(null);
       setIsFtpCleared(true);
-      localStorage.setItem("ftpCleared", "true");
+      localStorage.removeItem("ftpCredentials");
       localStorage.removeItem("liveFeedImages");
-      navigate(`/connect`, { replace: true });
+      localStorage.setItem("ftpCleared", "true");
+      navigate("/connect", { replace: true });
     }
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex items-start justify-center">
+    <div className="min-h-60 flex items-center justify-center">
       <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-4 mx-auto">
         <div className="space-y-4">
           <div className="bg-white/70 rounded-2xl shadow-md border border-gray-200 p-4 sm:p-6">
-            <h3 className="text-xl font-semibold text-gray-900 mb-4 leading-6">Setup FTP Connection</h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-4 leading-6">Event</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <label htmlFor="camera" className="block text-sm font-medium text-gray-700 leading-5">
@@ -318,7 +330,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
                   <button
                     type="button"
                     onClick={openDirectoryPicker}
-                    className="px-4 py-3 bg-gray-100 text-gray-900 border border-gray-300 rounded-xl hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-600 transition-all duration-300 ease-in-out text-sm leading-5"
+                    className="px-4 py-3 bg-gray-100 text-gray-900 border border-gray-300 rounded-xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-600 transition-all duration-300 ease-in-out text-sm leading-5"
                   >
                     Browse
                   </button>
