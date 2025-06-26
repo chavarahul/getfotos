@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     imageStreamListeners.delete(callback);
     console.log("Removed image-stream listener via removeImageStreamListener, total:", imageStreamListeners.size);
   },
+fetchPhotos: (albumName) => ipcRenderer.invoke("fetch-photos", albumName),
+  deletePhoto: (params) => ipcRenderer.invoke("delete-photo", params),
+  bulkDeletePhotos: (params) => ipcRenderer.invoke("bulk-delete-photos", params),
+  syncPhotosToCloud: (params) => ipcRenderer.invoke("sync-photos-to-cloud", params),
+  onClearCredentials: (callback) => ipcRenderer.on('clear-ftp-credentials', (event, data) => callback(data)),
   onClearFtpCredentials: (callback) => ipcRenderer.on("clear-ftp-credentials", (event, data) => callback(data)),
-  removeClearFtpCredentialsListener: (callback) => ipcRenderer.removeListener("clear-ftp-credentials", callback)
+  removeClearFtpCredentialsListener: (callback) => ipcRenderer.removeListener("clear-ftp-credentials", callback),
+  removeClearCredentialsListener: (callback) => ipcRenderer.removeListener('clear-ftp-credentials', callback),
 });

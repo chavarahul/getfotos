@@ -22,8 +22,9 @@ interface ElectronAPI {
     username: string;
     directory: string;
     albumId: string;
+    albumName: string; // Add albumName to interface
     token: string;
-  }) => Promise<ConnectionDetails>;
+  }) => Promise<ConnectionDetails | { error: string }>; // Allow error response
   getFtpCredentials: () => Promise<ConnectionDetails[]>;
   resetFtpCredentials: () => Promise<{ message: string }>;
   testFtpCredentials: (credentials: {
@@ -72,7 +73,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
 
       // Check backend status first
       const { isRunning, credentials: backendCredentials } = await window.electronAPI.checkFtpStatus();
-      // console.log("FTP server status:", { isRunning, backendCredentials });
+      console.log("FTP server status:", { isRunning, backendCredentials });
 
       // If server is running, use backend credentials
       if (isRunning && backendCredentials.length > 0) {
@@ -81,7 +82,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         localStorage.setItem("ftpCredentials", JSON.stringify(creds));
         localStorage.setItem("ftpCleared", "false");
         setIsFtpCleared(false);
-        // console.log("Set backend credentials:", creds);
+        console.log("Set backend credentials:", creds);
         return;
       }
 
@@ -97,19 +98,19 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
           setCredentials(parsedCreds);
           setIsFtpCleared(false);
           localStorage.setItem("ftpCleared", "false");
-          // console.log("Set valid localStorage credentials:", parsedCreds);
+          console.log("Set valid localStorage credentials:", parsedCreds);
         } else {
           setCredentials(null);
           setIsFtpCleared(true);
           localStorage.removeItem("ftpCredentials");
           localStorage.setItem("ftpCleared", "true");
-          // console.log("Invalid credentials in localStorage, cleared");
+          console.log("Invalid credentials in localStorage, cleared");
         }
       } else {
         setCredentials(null);
         setIsFtpCleared(true);
         localStorage.setItem("ftpCleared", "true");
-        // console.log("No valid credentials found");
+        console.log("No valid credentials found");
       }
     } catch (err) {
       console.error("Failed to load credentials:", err);
@@ -125,7 +126,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
     const loadPersistedState = async () => {
       let initialFormValues;
       const savedFormValues = localStorage.getItem("formValues");
-      // console.log("Loading form values from localStorage:", savedFormValues);
+      console.log("Loading form values from localStorage:", savedFormValues);
 
       if (savedFormValues) {
         try {
@@ -209,12 +210,23 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         return;
       }
 
-      const pathRegex = /^(?:[a-zA-Z]:[\\/][^\0<>*:"|?*]+|\/[\w\/.-]+)$/;
+      const pathRegex = /^(?:[a-zA-Z]:[\\\/][^\0<>*:"|?*]+|\/[\w\/.-]+)$/;
       if (!pathRegex.test(directory)) {
         setError("Invalid directory path");
         toast.error(
-          "Please enter a valid directory path (e.g., C:\\Users\\chava\\Pictures or /home/user/images)"
+          "Please enter a valid directory path (e.g., C:\\Users\\Example\\Pictures or /home/user/images)"
         );
+        setLoading(false);
+        return;
+      }
+
+      // Get albumName from the user-selected album
+      const selectedAlbum = albums.find((a) => a.id === album);
+      const albumName = selectedAlbum ? selectedAlbum.name : "";
+
+      if (!albumName) {
+        setError("Selected album not found");
+        toast.error("Album not found");
         setLoading(false);
         return;
       }
@@ -231,14 +243,17 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
           existingCredentials = null;
         }
 
+        console.log(albumName + "dddeee");
+
         const data = await window.electronAPI.startFtp({
           username,
           directory,
           albumId: album,
+          albumName, // User-selected album name
           token,
         });
 
-        if (data.error) {
+        if ("error" in data) {
           throw new Error(data.error);
         }
 
@@ -247,7 +262,6 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         localStorage.setItem("ftpCredentials", JSON.stringify(data));
         localStorage.setItem("ftpCleared", "false");
         toast.success("FTP server started successfully");
-        navigate(`/connect`, { replace: false });
       } catch (err: any) {
         const message = err.message || "Failed to start FTP server";
         setError(message);
@@ -256,7 +270,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
         setLoading(false);
       }
     },
-    [formValues, navigate, username]
+    [formValues, navigate, username, albums]
   );
 
   const handleCloseConnection = useCallback(async () => {

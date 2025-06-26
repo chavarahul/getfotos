@@ -1,655 +1,543 @@
-import { useState, useRef, useCallback, memo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Button } from "../components/ui/button";
-import { Card, CardContent } from "../components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
-import { Badge } from "../components/ui/badge";
-import { Checkbox } from "../components/ui/checkbox";
-import { Progress } from "../components/ui/progress";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "../components/ui/context-menu";
-import { ScrollArea } from "../components/ui/scroll-area";
-import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
-import { toast } from "sonner";
-import {
-  ArrowLeft,
-  Plus,
-  Trash2,
-  Image as ImageIcon,
-  Camera,
-  Upload,
-  X,
-  CheckSquare,
-  MoreHorizontal,
-} from "lucide-react";
-import { PageLoader, ErrorDisplay } from "../components/common/loaders";
-import axiosInstance from "../utils/api";
-import type { Album, Photo } from "../constants/type";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAlbum, fetchPhotos } from "@/lib/actions";
+import toast from "react-hot-toast";
+import type { Photo } from "../constants/type";
 
-interface UploadFile {
-  file: File;
-  preview: string;
-  caption: string;
-  progress: number;
+interface ElectronAPI {
+  fetchPhotos: (albumName: string) => Promise<Photo[]>;
+  deletePhoto: (params: { photoId: string }) => Promise<{ success: boolean; changes: number }>;
+  bulkDeletePhotos: (params: { photoIds: string[] }) => Promise<{ success: boolean; changes: number }>;
+  syncPhotosToCloud: (params: { albumName: string; albumId: string; token: string }) => Promise<Photo[]>;
+  onImageStream: (callback: (data: any) => void) => () => void;
+  getFtpCredentials: () => Promise<{ albumId: string; albumName: string }[]>;
 }
 
-const PhotoCard = memo(({ photo, isSelectionMode, selectedPhotos, togglePhotoSelection, handleDeletePhoto }: {
-  photo: Photo;
-  isSelectionMode: boolean;
-  selectedPhotos: string[];
-  togglePhotoSelection: (photoId: string) => void;
-  handleDeletePhoto: (photoId: string) => void;
-}) => (
-  <motion.div
-    key={photo.id}
-    variants={{
-      hidden: { opacity: 0, scale: 0.95, y: 20 },
-      show: {
-        opacity: 1,
-        scale: 1,
-        y: 0,
-        transition: { type: "spring", damping: 25 },
-      },
-    }}
-    className="relative group aspect-square p-0"
-  >
-    <ContextMenu>
-      <ContextMenuTrigger>
-        <Card className="h-auto overflow-hidden bg-transparent px-0">
-          <CardContent className="relative h-80">
-            <motion.img
-              src={photo.url}
-              alt={photo.caption || "Photo"}
-              loading="lazy"
-              initial={{ scale: 1 }}
-              whileHover={{ scale: 1.03 }}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 transition-opacity duration-400 rounded-xl" />
-            {isSelectionMode ? (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ duration: 0.3 }}
-                className="absolute top-4 left-4"
-              >
-                <Checkbox
-                  checked={selectedPhotos.includes(photo.id)}
-                  onCheckedChange={() => togglePhotoSelection(photo.id)}
-                  className="w-6 h-6 rounded-full bg-gray-100/90 border-2 border-gray-300 data-[state=checked]:bg-gray-700 data-[state=checked]:text-white data-[state=checked]:border-none"
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 }}
-                className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-400"
-              >
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 rounded-full bg-gray-100/90 text-gray-900 hover:bg-gray-200/90 backdrop-blur-sm"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent
-                    side="right"
-                    className="w-80 bg-gray-100/95 backdrop-blur-lg border-none"
-                  >
-                    <div className="flex flex-col h-full p-5">
-                      <div className="flex-1 space-y-5">
-                        <div className="aspect-[4/3] w-full">
-                          <img
-                            src={photo.url}
-                            alt={photo.caption || "Photo"}
-                            className="w-full h-full object-cover rounded-xl"
-                          />
-                        </div>
-                        <div className="space-y-4">
-                          <div>
-                            <h3 className="text-sm font-medium text-gray-900">
-                              Uploaded
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              {new Date(photo.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          {photo.caption && (
-                            <div>
-                              <h3 className="text-sm font-medium text-gray-900">
-                                Caption
-                              </h3>
-                              <p className="text-sm text-gray-600">{photo.caption}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="w-full border-gray-300 text-gray-900 hover:bg-gray-200 cursor-pointer"
-                        onClick={() => handleDeletePhoto(photo.id)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete Photo
-                      </Button>
-                    </div>
-                  </SheetContent>
-                </Sheet>
-              </motion.div>
-            )}
-            {photo.caption && (
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 }}
-                className="absolute bottom-2 left-2 right-2 bg-gradient-to-t from-black/70 to-transparent text-white text-xs p-3 rounded-b-xl line-clamp-2"
-              >
-                {photo.caption}
-              </motion.div>
-            )}
-          </CardContent>
-        </Card>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="bg-gray-100/95 border-none backdrop-blur-lg rounded-lg">
-        <ContextMenuItem
-          className="text-gray-900 hover:bg-gray-200/90 rounded-md"
-          onClick={() => handleDeletePhoto(photo.id)}
-        >
-          <Trash2 className="w-4 h-4 mr-2" />
-          Delete
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  </motion.div>
-));
-
-const AlbumPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [isAddPhotoOpen, setIsAddPhotoOpen] = useState<boolean>(false);
-  const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
-  const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const { data: album, isLoading: albumLoading, error: albumError } = useQuery({
-    queryKey: ["album", id],
-    queryFn: () => fetchAlbum(id!),
-    enabled: !!id,
-    staleTime: 1000 * 60,
-    retry: 1,
-  });
-
-  const { data: photos = [], isLoading: photosLoading, error: photosError } = useQuery({
-    queryKey: ["photos", id],
-    queryFn: () => fetchPhotos(id!),
-    enabled: !!id,
-    staleTime: 1000 * 60,
-    retry: 1,
-  });
-
-  const addPhotosMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
-      await axiosInstance.post(`/api/photos/album/${id}`, formData);
-    },
-    onMutate: () => {
-      uploadFiles.forEach((_, index) => {
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 10;
-          setUploadFiles((prev) =>
-            prev.map((item, i) =>
-              i === index ? { ...item, progress: Math.min(progress, 100) } : item
-            )
-          );
-          if (progress >= 100) clearInterval(interval);
-        }, 200);
-        return () => clearInterval(interval);
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["photos", id] });
-      queryClient.invalidateQueries({ queryKey: ["album", id] });
-      toast.success(`${uploadFiles.length} photo${uploadFiles.length > 1 ? "s" : ""} added successfully`);
-      setIsAddPhotoOpen(false);
-      setUploadFiles((prev) => {
-        prev.forEach((file) => URL.revokeObjectURL(file.preview));
-        return [];
-      });
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || "Failed to add photos");
-    },
-  });
-
-  const deletePhotoMutation = useMutation({
-    mutationFn: async ({ photoId, albumId }: { photoId: string; albumId: string }) => {
-      await axiosInstance.delete(`/api/photos/${photoId}/album/${albumId}`);
-    },
-    onSuccess: (_, { photoId }) => {
-      queryClient.setQueryData<Photo[]>(["photos", id], (old) =>
-        old?.filter((photo) => photo.id !== photoId) || []
-      );
-      queryClient.setQueryData<Album>(["album", id], (old) =>
-        old ? { ...old, photoCount: old.photoCount - 1 } : old
-      );
-      toast.success("Photo deleted successfully");
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || "Failed to delete photo");
-    },
-  });
-
-  const bulkDeleteMutation = useMutation({
-    mutationFn: async (photoIds: string[]) => {
-      await Promise.all(
-        photoIds.map((photoId) =>
-          axiosInstance.delete(`/api/photos/${photoId}/album/${id}`)
-        )
-      );
-    },
-    onSuccess: () => {
-      queryClient.setQueryData<Photo[]>(["photos", id], (old) =>
-        old?.filter((photo) => !selectedPhotos.includes(photo.id)) || []
-      );
-      queryClient.setQueryData<Album>(["album", id], (old) =>
-        old ? { ...old, photoCount: old.photoCount - selectedPhotos.length } : old
-      );
-      toast.success(`${selectedPhotos.length} photo${selectedPhotos.length > 1 ? "s" : ""} deleted successfully`);
-      setSelectedPhotos([]);
-      setIsSelectionMode(false);
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || "Failed to delete photos");
-    },
-  });
-
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files).filter((file) =>
-      file.type.startsWith("image/")
-    );
-    addFiles(files);
-  }, []);
-
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter((file) =>
-      file.type.startsWith("image/")
-    );
-    addFiles(files);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  }, []);
-
-  const addFiles = useCallback((files: File[]) => {
-    const newFiles: UploadFile[] = files.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-      caption: "",
-      progress: 0,
-    }));
-    setUploadFiles((prev) => [...prev, ...newFiles]);
-  }, []);
-
-  const handleCaptionChange = useCallback((index: number, value: string) => {
-    setUploadFiles((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, caption: value } : item))
-    );
-  }, []);
-
-  const handleRemoveFile = useCallback((index: number) => {
-    setUploadFiles((prev) => {
-      const fileToRemove = prev[index];
-      URL.revokeObjectURL(fileToRemove.preview);
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
-
-  const handleAddPhotos = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (uploadFiles.length === 0) {
-      toast.error("Please select at least one image");
-      return;
-    }
-
-    const formData = new FormData();
-    uploadFiles.forEach((item) => {
-      formData.append("images", item.file);
-      formData.append("captions", item.caption);
-    });
-
-    addPhotosMutation.mutate(formData);
-  };
-
-  const handleDeletePhoto = (photoId: string) => {
-    if (!confirm("Are you sure you want to delete this photo?")) return;
-    deletePhotoMutation.mutate({ photoId, albumId: id! });
-  };
-
-  const handleBulkDelete = () => {
-    if (
-      !confirm(
-        `Are you sure you want to delete ${selectedPhotos.length} photo${selectedPhotos.length > 1 ? "s" : ""}?`
-      )
-    ) {
-      return;
-    }
-    bulkDeleteMutation.mutate(selectedPhotos);
-  };
-
-  const togglePhotoSelection = useCallback((photoId: string) => {
-    setSelectedPhotos((prev) =>
-      prev.includes(photoId)
-        ? prev.filter((id) => id !== photoId)
-        : [...prev, photoId]
-    );
-  }, []);
-
-  if (albumLoading || photosLoading) {
-    return (
-      <div className="h-screen bg-gray-100 flex items-center justify-center">
-        <PageLoader />
-      </div>
-    );
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
   }
+}
 
-  if (albumError || photosError) {
-    return (
-      <div className="h-screen bg-gray-100 flex items-center justify-center">
-        <ErrorDisplay message={(albumError || photosError)?.message || "Failed to load album"} />
-      </div>
-    );
-  }
-
-  if (!album) {
-    return (
-      <div className="h-screen bg-gray-100 flex items-center justify-center">
-        <ErrorDisplay message="Album not found" />
-      </div>
-    );
-  }
+// Confirmation Modal Component
+const ConfirmationModal: React.FC<{
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  type?: 'danger' | 'warning';
+}> = ({ isOpen, title, message, confirmText, cancelText, onConfirm, onCancel, type = 'danger' }) => {
+  if (!isOpen) return null;
 
   return (
-    <TooltipProvider>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5 }}
-        className="h-screen bg-gray-100 flex flex-col"
-      >
-        {/* Header */}
-        <header className="sticky top-0 z-20 bg-gray-100/90 backdrop-blur-lg border-b border-gray-200/50 px-4 sm:px-6 py-3">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => navigate("/dashboard")}
-                    className="text-gray-900 hover:bg-gray-200/50 rounded-full"
-                    aria-label="Back to dashboard"
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Back to dashboard</p>
-                </TooltipContent>
-              </Tooltip>
-              <h1 className="text-lg font-medium text-gray-900 tracking-tight">
-                {album.name} {">"} Photos
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all">
+        <div className="flex items-center mb-4">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center mr-4 ${
+            type === 'danger' ? 'bg-red-100' : 'bg-yellow-100'
+          }`}>
+            {type === 'danger' ? (
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            )}
+          </div>
+          <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
+        </div>
+        <p className="text-gray-600 mb-6 leading-relaxed">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors"
+          >
+            {cancelText}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2.5 text-white rounded-xl font-medium transition-colors ${
+              type === 'danger' 
+                ? 'bg-red-600 hover:bg-red-700' 
+                : 'bg-yellow-600 hover:bg-yellow-700'
+            }`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Cloud Status Badge Component
+const CloudStatusBadge: React.FC<{ isUploaded: boolean }> = ({ isUploaded }) => {
+  if (!isUploaded) return null;
+  
+  return (
+    <div className="absolute top-3 left-3 bg-black/80 text-white px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 shadow-lg">
+      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+      </svg>
+      Cloud
+    </div>
+  );
+};
+
+const AlbumPage: React.FC = () => {
+  const { albumName } = useParams<{ albumName: string }>();
+  const navigate = useNavigate();
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, estimatedTime: 0 });
+  const [uploadedPhotos, setUploadedPhotos] = useState<Set<string>>(new Set());
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'single' | 'bulk';
+    photoId?: string;
+  }>({ isOpen: false, type: 'single' });
+
+  const fetchPhotos = useCallback(async () => {
+    if (!albumName) {
+      setError("No album name provided in URL");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const decodedAlbumName = decodeURIComponent(albumName);
+      console.log("Fetching photos for:", { albumName, decodedAlbumName });
+
+      const fetchedPhotos = await window.electronAPI.fetchPhotos(decodedAlbumName);
+      console.log("Fetched photos:", fetchedPhotos);
+
+      setPhotos(fetchedPhotos);
+      setUploadedPhotos(new Set(fetchedPhotos.filter(p => p.url.startsWith("https://res.cloudinary.com")).map(p => p.id)));
+      if (fetchedPhotos.length === 0) {
+        console.log("No photos found for album:", decodedAlbumName);
+      }
+    } catch (err: any) {
+      console.error("Error fetching photos:", err);
+      setError(err.message || "Failed to load photos. Check logs for details.");
+      toast.error(err.message || "Failed to load photos");
+    } finally {
+      setLoading(false);
+    }
+  }, [albumName]);
+
+  useEffect(() => {
+    fetchPhotos();
+  }, [fetchPhotos]);
+
+  useEffect(() => {
+    const handleImageStream = (data: any) => {
+      if (albumName) {
+        const decodedAlbumName = decodeURIComponent(albumName);
+        console.log("Image stream received:", data);
+        if (data.action === "add" && data.albumName === decodedAlbumName) {
+          console.log("Refreshing photos for album:", decodedAlbumName);
+          fetchPhotos().then(() => {
+            toast.success("New photo added to album!");
+          }).catch((err) => {
+            console.error("Failed to refresh photos after image stream:", err);
+            toast.error("Failed to refresh photos: " + err.message);
+          });
+        } else if (data.action === "error") {
+          console.error("Image stream error:", data.error);
+          toast.error("Image upload failed: " + data.error);
+        } else {
+          console.log("Image stream ignored:", {
+            reason: data.albumName !== decodedAlbumName ? "Album name mismatch" : "Invalid action",
+            receivedAlbumName: data.albumName,
+            expectedAlbumName: decodedAlbumName,
+            action: data.action,
+          });
+        }
+      }
+    };
+
+    const unsubscribe = window.electronAPI.onImageStream(handleImageStream);
+    console.log("Image stream listener registered");
+
+    return () => {
+      unsubscribe();
+      console.log("Image stream listener unsubscribed");
+    };
+  }, [albumName, fetchPhotos]);
+
+  const handlePhotoSelect = (photoId: string) => {
+    setSelectedPhotos((prev) =>
+      prev.includes(photoId) ? prev.filter((id) => id !== photoId) : [...prev, photoId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedPhotos.length === photos.length) {
+      setSelectedPhotos([]);
+    } else {
+      setSelectedPhotos(photos.map(p => p.id));
+    }
+  };
+
+  const confirmDeletePhoto = (photoId: string) => {
+    setConfirmModal({ isOpen: true, type: 'single', photoId });
+  };
+
+  const confirmBulkDelete = () => {
+    setConfirmModal({ isOpen: true, type: 'bulk' });
+  };
+
+  const handleDeletePhoto = async (photoId: string) => {
+    try {
+      const result = await window.electronAPI.deletePhoto({ photoId });
+      if (result.success) {
+        setPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
+        setSelectedPhotos((prev) => prev.filter((id) => id !== photoId));
+        setUploadedPhotos((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(photoId);
+          return newSet;
+        });
+        toast.success("Photo deleted successfully");
+      }
+    } catch (err: any) {
+      toast.error("Failed to delete photo: " + err.message);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedPhotos.length === 0) {
+      toast.error("No photos selected");
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.bulkDeletePhotos({ photoIds: selectedPhotos });
+      if (result.success) {
+        setPhotos((prev) => prev.filter((photo) => !selectedPhotos.includes(photo.id)));
+        setSelectedPhotos([]);
+        setUploadedPhotos((prev) => {
+          const newSet = new Set(prev);
+          selectedPhotos.forEach(id => newSet.delete(id));
+          return newSet;
+        });
+        toast.success(`${result.changes} photo(s) deleted successfully`);
+      }
+    } catch (err: any) {
+      toast.error("Failed to delete photos: " + err.message);
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    setConfirmModal({ isOpen: false, type: 'single' });
+    
+    if (confirmModal.type === 'single' && confirmModal.photoId) {
+      await handleDeletePhoto(confirmModal.photoId);
+    } else if (confirmModal.type === 'bulk') {
+      await handleBulkDelete();
+    }
+  };
+
+  const handleSyncToCloud = async () => {
+    if (!albumName) {
+      toast.error("Album name not provided");
+      return;
+    }
+
+    const photosToSync = photos.filter(p => !uploadedPhotos.has(p.id));
+    if (photosToSync.length === 0) {
+      toast.success("All photos are already synced to cloud!");
+      return;
+    }
+
+    setSyncing(true);
+    setSyncProgress({ current: 0, total: photosToSync.length, estimatedTime: 0 });
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No authentication token found");
+      }
+
+      const credentials = await window.electronAPI.getFtpCredentials();
+      const albumData = credentials.find((cred) => cred.albumName === decodeURIComponent(albumName));
+      const albumId = albumData?.albumId;
+
+      if (!albumId) {
+        throw new Error("Album ID not found in FTP credentials");
+      }
+
+      const decodedAlbumName = decodeURIComponent(albumName);
+
+      let totalTime = 0;
+      let uploadedCount = 0;
+
+      const startTime = performance.now();
+      const syncedPhotos = await window.electronAPI.syncPhotosToCloud({
+        albumName: decodedAlbumName,
+        albumId,
+        token,
+      });
+
+      for (const photo of syncedPhotos) {
+        if (photo.url.startsWith("https://res.cloudinary.com")) {
+          uploadedCount++;
+          const elapsedTime = performance.now() - startTime;
+          totalTime = elapsedTime / uploadedCount;
+          setSyncProgress(prev => ({
+            ...prev,
+            current: uploadedCount,
+            estimatedTime: ((prev.total - uploadedCount) * totalTime) / 1000,
+          }));
+          setUploadedPhotos(prev => new Set([...prev, photo.id]));
+        }
+      }
+
+      setPhotos(syncedPhotos);
+      toast.success(`Synced ${uploadedCount} new photo(s) to cloud successfully`);
+    } catch (err: any) {
+      toast.error("Failed to sync photos: " + err.message);
+    } finally {
+      setSyncing(false);
+      setSyncProgress({ current: 0, total: 0, estimatedTime: 0 });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-center">
+            <p className="text-xl font-semibold text-gray-700">Loading photos...</p>
+            <p className="text-sm text-gray-500 mt-1">Please wait while we fetch your album</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-red-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Oops! Something went wrong</h2>
+          <p className="text-gray-600 mb-8 leading-relaxed">{error}</p>
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="w-full px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const uploadedCount = uploadedPhotos.size;
+  const totalPhotos = photos.length;
+  const pendingSync = totalPhotos - uploadedCount;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header Section */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="flex-1">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                {decodeURIComponent(albumName || "Album")}
               </h1>
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <span className="flex items-center text-gray-600">
+                  <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {totalPhotos} photos
+                </span>
+                {uploadedCount > 0 && (
+                  <span className="flex items-center text-emerald-600 font-medium">
+                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M13 10l3-3m0 0l-3-3m3 3H9" />
+                    </svg>
+                    {uploadedCount} synced to cloud
+                  </span>
+                )}
+                {selectedPhotos.length > 0 && (
+                  <span className="flex items-center text-blue-600 font-medium">
+                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                    </svg>
+                    {selectedPhotos.length} selected
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Badge className="border-gray-300 text-white text-sm px-3 py-1">
-                <Camera className="w-3.5 h-3.5 mr-1.5" />
-                {album.photoCount} Photo{album.photoCount !== 1 ? "s" : ""}
-              </Badge>
-              {isSelectionMode ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-gray-300 text-gray-900 hover:bg-gray-200 cursor-pointer text-sm px-3"
-                    onClick={() => {
-                      setIsSelectionMode(false);
-                      setSelectedPhotos([]);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-gray-300 text-gray-900 cursor-pointer hover:bg-gray-200 text-sm px-3"
-                    disabled={selectedPhotos.length === 0}
-                    onClick={handleBulkDelete}
-                  >
-                    <Trash2 className="w-4 h-4 mr-1.5" />
-                    Delete {selectedPhotos.length > 0 ? selectedPhotos.length : ""}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-gray-300 text-gray-900 cursor-pointer hover:bg-gray-200 text-sm px-3"
-                    onClick={() => setIsSelectionMode(true)}
-                  >
-                    <CheckSquare className="w-4 h-4 mr-1.5" />
-                    Select
-                  </Button>
-                  <Dialog open={isAddPhotoOpen} onOpenChange={setIsAddPhotoOpen}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <DialogTrigger asChild>
-                          <Button
-                            size="sm"
-                            className="bg-black text-white hover:bg-gray-900 text-sm px-3 cursor-pointer"
-                          >
-                            <Plus className="w-4 h-4 mr-1.5" />
-                            Add Photos
-                          </Button>
-                        </DialogTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Add new photos</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <DialogContent className="max-w-md bg-gray-100 border-none rounded-2xl shadow-xl">
-                      <DialogHeader>
-                        <DialogTitle className="text-gray-900 text-lg">Add New Photos</DialogTitle>
-                      </DialogHeader>
-                      <form onSubmit={handleAddPhotos} className="space-y-4">
-                        <div
-                          className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
-                            isDragging ? "border-gray-600 bg-gray-200" : "border-gray-300 bg-gray-100"
-                          }`}
-                          onDragOver={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                          onDrop={handleDrop}
-                        >
-                          <input
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            className="hidden"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                          />
-                          <p className="text-gray-600 text-sm">
-                            Drag and drop images or{" "}
-                            <span
-                              className="text-gray-900 hover:underline cursor-pointer font-medium"
-                              onClick={() => fileInputRef.current?.click()}
-                            >
-                              browse
-                            </span>
-                          </p>
-                        </div>
-                        {uploadFiles.length > 0 && (
-                          <ScrollArea className="max-h-60 rounded-md">
-                            <div className="space-y-3 p-2">
-                              {uploadFiles.map((item, index) => (
-                                <div
-                                  key={index}
-                                  className="flex items-center gap-3 border-b border-gray-200 pb-3"
-                                >
-                                  <img
-                                    src={item.preview}
-                                    alt="Preview"
-                                    className="w-14 h-14 object-cover rounded-md"
-                                  />
-                                  <div className="flex-1 space-y-1.5">
-                                    <Input
-                                      placeholder="Caption (optional)"
-                                      value={item.caption}
-                                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                                        handleCaptionChange(index, e.target.value)
-                                      }
-                                      className="border-gray-200 text-gray-900 placeholder:text-gray-400 text-sm"
-                                    />
-                                    <Progress
-                                      value={item.progress}
-                                      className="h-1 bg-gray-200 [&>div]:bg-gray-600"
-                                    />
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleRemoveFile(index)}
-                                    className="text-gray-900 hover:bg-gray-200 rounded-full"
-                                    aria-label="Remove file"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          </ScrollArea>
-                        )}
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="border-gray-300 text-gray-900 hover:bg-gray-200 rounded-full text-sm px-3"
-                            onClick={() => {
-                              setIsAddPhotoOpen(false);
-                              setUploadFiles((prev) => {
-                                prev.forEach((file) => URL.revokeObjectURL(file.preview));
-                                return [];
-                              });
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            type="submit"
-                            size="sm"
-                            className="bg-black text-white hover:bg-gray-900 rounded-full text-sm px-3 cursor-pointer"
-                            disabled={uploadFiles.length === 0 || addPhotosMutation.isPending}
-                          >
-                            <Upload className="w-4 h-4 mr-1.5" />
-                            Upload
-                          </Button>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                </>
+            
+            <div className="flex flex-wrap gap-3">
+              {photos.length > 0 && (
+                <button
+                  onClick={handleSelectAll}
+                  className="px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  {selectedPhotos.length === photos.length ? 'Deselect All' : 'Select All'}
+                </button>
               )}
+              
+              {selectedPhotos.length > 0 && (
+                <button
+                  onClick={confirmBulkDelete}
+                  className="px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete {selectedPhotos.length}
+                </button>
+              )}
+              
+              <button
+                onClick={handleSyncToCloud}
+                className="px-4 py-2.5 bg-black/80 text-white rounded-xl hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-2"
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M13 10l3-3m0 0l-3-3m3 3H9" />
+                    </svg>
+                    {pendingSync > 0 ? `Sync ${pendingSync} to Cloud` : 'All Synced'}
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={() => navigate("/dashboard")}
+                className="px-4 py-2.5 text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 rounded-xl font-medium transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back
+              </button>
             </div>
           </div>
-        </header>
+        </div>
 
-        <ScrollArea className="flex-1 min-h-60">
-          <main className="py-6 px-4 sm:px-6">
-            <div className="max-w-7xl mx-auto">
-              {photos.length === 0 ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.4 }}
-                  className="flex flex-col items-center justify-center min-h-[60vh]"
-                >
-                  <ImageIcon className="w-16 h-16 text-gray-400 mb-4" />
-                  <p className="text-gray-600 text-base font-medium">
-                    No photos yet. Add your first photo!
-                  </p>
-                  <Button
-                    className="mt-4 bg-black text-white hover:bg-gray-900 rounded-full text-sm px-3"
-                    onClick={() => setIsAddPhotoOpen(true)}
-                  >
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Add Photos
-                  </Button>
-                </motion.div>
-              ) : (
-                <motion.div
-                  className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 auto-rows-fr"
-                  variants={{
-                    hidden: { opacity: 0 },
-                    show: {
-                      opacity: 1,
-                      transition: { staggerChildren: 0.1, delayChildren: 0.2 },
-                    },
-                  }}
-                  initial="hidden"
-                  animate="show"
-                >
-                  {photos.map((photo) => (
-                    <PhotoCard
-                      key={photo.id}
-                      photo={photo}
-                      isSelectionMode={isSelectionMode}
-                      selectedPhotos={selectedPhotos}
-                      togglePhotoSelection={togglePhotoSelection}
-                      handleDeletePhoto={handleDeletePhoto}
-                    />
-                  ))}
-                </motion.div>
-              )}
+        {/* Content Section */}
+        {photos.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
             </div>
-          </main>
-        </ScrollArea>
-      </motion.div>
-    </TooltipProvider>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No photos yet</h3>
+            <p className="text-gray-600 max-w-md mx-auto leading-relaxed">
+              Upload images via FTP to the selected directory to get started! Your photos will appear here once uploaded.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            {photos.map((photo) => (
+              <div
+                key={photo.id}
+                className="group relative bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+              >
+                <div className="aspect-square overflow-hidden">
+                  <img
+                    src={photo.url}
+                    alt={photo.caption || "Photo"}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                </div>
+                
+                <CloudStatusBadge isUploaded={uploadedPhotos.has(photo.id)} />
+                
+                <div className="absolute top-3 right-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedPhotos.includes(photo.id)}
+                    onChange={() => handlePhotoSelect(photo.id)}
+                    className="w-5 h-5 text-blue-600 rounded border-2 border-white shadow-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <button
+                    onClick={() => confirmDeletePhoto(photo.id)}
+                    className="w-full px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.type === 'single' ? 'Delete Photo' : 'Delete Selected Photos'}
+        message={
+          confirmModal.type === 'single'
+            ? 'Are you sure you want to delete this photo? This action cannot be undone.'
+            : `Are you sure you want to delete ${selectedPhotos.length} selected photo(s)? This action cannot be undone.`
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmAction}
+        onCancel={() => setConfirmModal({ isOpen: false, type: 'single' })}
+        type="danger"
+      />
+
+      {/* Sync Progress Modal */}
+      {syncing && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 text-center max-w-md w-full">
+            <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Syncing to Cloud</h2>
+            <p className="text-gray-600 mb-2">
+              Uploading {syncProgress.current} of {syncProgress.total} photos
+            </p>
+            <p className="text-gray-500 text-sm">
+              Estimated time remaining: {syncProgress.estimatedTime.toFixed(1)} seconds
+            </p>
+            <div className="mt-6 w-full bg-gray-200 rounded-full h-2.5">
+              <div
+                className="bg-black/80 h-2.5 rounded-full transition-all duration-300"
+                style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

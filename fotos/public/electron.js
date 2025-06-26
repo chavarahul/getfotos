@@ -17,33 +17,32 @@ require("dotenv").config();
 process.on("uncaughtException", (error) => {
   logger.error("Uncaught Exception", { error: error.message, stack: error.stack });
 });
+
 process.on("unhandledRejection", (reason, promise) => {
   logger.error("Unhandled Rejection", { reason: reason.message || reason, promise });
 });
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "496438207267-5sm1joa903t9k6ddgv5ulaigq8qvql46.apps.googleusercontent.com";
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "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";
+const GOOGLE_CLIENT_ID = "496438207267-5sm1joa903t9k6ddgv5ulaigq8qvql46.apps.googleusercontent.com";
+const GOOGLE_CLIENT_SECRET =  "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";
+
 const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:3000/api/auth/callback/google";
 const SERVER_URL = process.env.SERVER_URL || "https://backend-google-three.vercel.app";
 const FTP_PORT = parseInt(process.env.FTP_PORT, 10) || 2121;
 const FTP_PASV_RANGE = process.env.FTP_PASV_RANGE || "8000-9000";
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "dxfujspwu",
-  api_key: process.env.CLOUDINARY_API_KEY || "575875917966656",
-  api_secret: process.env.CLOUDINARY_API_SECRET || "_MvreXnhQZ_1FyRyL75Fnuyt6u0"
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "your-cloud-name",
+  api_key: process.env.CLOUDINARY_API_KEY || "your-api-key",
+  api_secret: process.env.CLOUDINARY_API_SECRET || "your-api-secret",
 });
 
 const logger = winston.createLogger({
   level: "info",
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
+  format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
   transports: [
     new winston.transports.File({ filename: "electron.log" }),
-    new winston.transports.Console()
-  ]
+    new winston.transports.Console(),
+  ],
 });
 
 let mainWindow;
@@ -52,14 +51,18 @@ let authWindow = null;
 const userCredentials = new Map();
 const directories = new Map();
 const albumIds = new Map();
+const albumNames = new Map();
 const processedFiles = new Set();
 const watchers = new Map();
 
 const DEFAULT_FTP_PASSWORD = "xy12z";
 
 const passwordFilePath = path.join(app.getPath("userData"), "ftpPassword.json");
+const photosFilePath = path.join(__dirname, "photos.json");
 
 let ftpPassword = DEFAULT_FTP_PASSWORD;
+let photosData = {};
+
 const loadFtpPassword = async () => {
   try {
     const data = await fs.readFile(passwordFilePath, "utf8");
@@ -82,10 +85,35 @@ const loadFtpPassword = async () => {
 
 const saveFtpPassword = async (password) => {
   try {
-    await fs.writeFile(passwordFilePath, JSON.stringify({ password }, null, 2));
+    await fs.writeFile(passwordFilePath, JSON.stringify({ password }));
     logger.info("Saved FTP password to file", { password });
   } catch (error) {
     logger.error("Failed to save FTP password", { error: error.message });
+  }
+};
+
+const loadPhotosData = async () => {
+  try {
+    const data = await fs.readFile(photosFilePath, "utf8");
+    photosData = JSON.parse(data);
+    logger.info("Loaded photos data from file", { file: photosFilePath });
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      logger.info("Photos file not found, initializing empty");
+      photosData = {};
+      await savePhotosData();
+    } else {
+      logger.error("Failed to load photos data", { error: error.message });
+    }
+  }
+};
+
+const savePhotosData = async () => {
+  try {
+    await fs.writeFile(photosFilePath, JSON.stringify(photosData, null, 2));
+    logger.info("Saved photos data to file", { file: photosFilePath });
+  } catch (error) {
+    logger.error("Failed to save photos data", { error: error.message });
   }
 };
 
@@ -95,88 +123,83 @@ const isPortInUse = (port) => {
     server.once("error", (err) => {
       if (err.code === "EADDRINUSE") {
         resolve(true);
+      } else {
+        resolve(false);
       }
     });
     server.once("listening", () => {
       server.close();
       resolve(false);
     });
-    server.listen(port, "0.0.0.0");
+    server.listen(port);
   });
 };
 
 const findAvailablePort = async (startPort) => {
   let port = startPort;
-  const maxAttempts = 10;
-  for (let i = 0; i < maxAttempts; i++) {
+  const maxAttempts = 100;
+  let attempts = 0;
+
+  while (attempts < maxAttempts) {
     const inUse = await isPortInUse(port);
     if (!inUse) {
       return port;
     }
-    logger.warn(`Port ${port} is in use, trying next port`);
     port++;
+    attempts++;
   }
-  throw new Error(`No available ports found between ${startPort} and ${startPort + maxAttempts - 1}`);
+
+  throw new Error(`No available ports found after ${maxAttempts} attempts`);
 };
 
-function createWindow() {
+const createWindow = () => {
   mainWindow = new BrowserWindow({
-    frame: true,
+    width: 1200,
+    height: 800,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      enableRemoteModule: false,
       nodeIntegration: false,
-      sandbox: true
-    }
+    },
   });
 
-  mainWindow.maximize();
+  const startUrl =
+    process.env.NODE_ENV === "development"
+      ? "http://localhost:3000"
+      : `file://${path.join(__dirname, "../dist/index.html")}`;
 
-  const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
-  console.log(startUrl);
-
-  mainWindow.loadURL(startUrl).catch((err) => {
-    logger.error("Failed to load URL", { error: err.message });
-  });
-
+  mainWindow.loadURL(startUrl);
   mainWindow.webContents.openDevTools({ mode: "detach" });
 
-  mainWindow.on("close", () => {
+  mainWindow.on("closed", () => {
     mainWindow = null;
-    if (authWindow) {
-      authWindow.destroy();
-      authWindow = null;
-    }
-    notifyRendererToClearCredentials();
-    watchers.forEach((watcher) => watcher.close());
-    watchers.clear();
   });
-}
+
+  logger.info("Main window created", { startUrl });
+};
 
 const generatePassword = () => {
-  const letters = "abcdefghijklmnopqrstuvwxyz";
-  const numbers = "0123456789";
-  const allChars = letters + numbers;
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let password = "";
-
-  password += letters[Math.floor(Math.random() * letters.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-
-  for (let i = 0; i < 3; i++) {
-    password += allChars[Math.floor(Math.random() * allChars.length)];
+  for (let i = 0; i < 5; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-
-  password = password.split("").sort(() => Math.random() - 0.5).join("");
   return password;
 };
 
-async function startFtpServer(username, directory, albumId, token, port = FTP_PORT) {
+async function startFtpServer(username, directory, albumId, albumName, token, port = FTP_PORT) {
   const normalizedUsername = username.replace(/\s+/g, "");
-  if (!normalizedUsername || !directory || !albumId || !token) {
-    logger.error("Missing parameters for FTP server", { username: normalizedUsername, directory, albumId });
-    return { error: "Username, directory, album ID, and token are required" };
+  if (!normalizedUsername || !directory || !albumId || !albumName || !token) {
+    logger.error("Missing parameters for FTP server", {
+      username: normalizedUsername,
+      directory,
+      albumId,
+      albumName,
+    });
+    return { error: "Username, directory, album ID, album name, and token are required" };
   }
+
+  logger.info("Starting FTP server with parameters", { username: normalizedUsername, directory, albumId, albumName });
 
   const absoluteDir = path.resolve(directory);
   try {
@@ -194,14 +217,21 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
   userCredentials.set(normalizedUsername, { password });
   directories.set(normalizedUsername, absoluteDir);
   albumIds.set(normalizedUsername, albumId);
+  albumNames.set(normalizedUsername, albumName);
 
-  logger.info("Stored credentials", { username: normalizedUsername, password });
+  logger.info("Stored credentials", {
+    username: normalizedUsername,
+    password,
+    albumName,
+    source: "User-selected album",
+  });
 
   const interfaces = os.networkInterfaces();
-  const address = Object.values(interfaces)
-    .flat()
-    .filter((iface) => iface.family === "IPv4" && !iface.internal)
-    .map((iface) => iface.address)[0] || "localhost";
+  const address =
+    Object.values(interfaces)
+      .flat()
+      .filter((iface) => iface.family === "IPv4" && !iface.internal)
+      .map((iface) => iface.address)[0] || "localhost";
   const host = address;
 
   let ftpPort = port;
@@ -216,10 +246,27 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
 
   if (ftpServer && !ftpServer.closed) {
     const existingCreds = userCredentials.get(normalizedUsername);
-    if (existingCreds && directories.get(normalizedUsername) === absoluteDir && albumIds.get(normalizedUsername) === albumId) {
-      logger.info("FTP server already running with matching credentials", { username: normalizedUsername, host, ftpPort });
-      const credentialsToSave = { host, username: normalizedUsername, password, port: ftpPort, mode: "Passive" };
-      await mainWindow.webContents.executeJavaScript(`localStorage.setItem("ftpCredentials", ${JSON.stringify(JSON.stringify(credentialsToSave))})`);
+    if (
+      existingCreds &&
+      directories.get(normalizedUsername) === absoluteDir &&
+      albumIds.get(normalizedUsername) === albumId &&
+      albumNames.get(normalizedUsername) === albumName
+    ) {
+      logger.info("FTP server already running with matching credentials", {
+        username: normalizedUsername,
+        host,
+        ftpPort,
+      });
+      const credentialsToSave = {
+        host,
+        username: normalizedUsername,
+        password,
+        port: ftpPort,
+        mode: "Passive",
+      };
+      await mainWindow.webContents.executeJavaScript(
+        `localStorage.setItem("ftpCredentials", ${JSON.stringify(JSON.stringify(credentialsToSave))})`
+      );
       return credentialsToSave;
     }
   }
@@ -237,7 +284,7 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
     anonymous: false,
     pasv_range: FTP_PASV_RANGE,
     pasv_url: host,
-    greeting: ["Welcome to FTP server"]
+    greeting: ["Welcome to FTP server"],
   });
 
   ftpServer.on("login", ({ connection, username, password }, resolve, reject) => {
@@ -246,20 +293,27 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
     const user = userCredentials.get(normalizedLoginUsername);
     if (user && user.password === password) {
       resolve({ root: directories.get(normalizedLoginUsername) });
-      logger.info("FTP login successful", { username: normalizedLoginUsername, root: directories.get(normalizedLoginUsername) });
+      logger.info("FTP login successful", {
+        username: normalizedLoginUsername,
+        root: directories.get(normalizedLoginUsername),
+      });
     } else {
       logger.error("FTP login failed: Invalid credentials", {
         username: normalizedLoginUsername,
         expected: user?.password,
-        received: password
+        received: password,
       });
       reject(new Error("Invalid credentials"));
     }
   });
 
   ftpServer.on("stor", ({ connection, filename }, resolve) => {
-    logger.info("FTP file upload", { filename, username: connection.username });
+    logger.info("FTP file upload started", { filename, username: connection.username, directory: directories.get(connection.username) });
     resolve();
+  });
+
+  ftpServer.on("stor-complete", ({ connection, filename }) => {
+    logger.info("FTP file upload completed", { filename, username: connection.username, directory: directories.get(connection.username) });
   });
 
   try {
@@ -271,9 +325,9 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: {
-        stabilityThreshold: 1000,
-        pollInterval: 100
-      }
+        stabilityThreshold: 2000,
+        pollInterval: 200,
+      },
     });
 
     watchers.set(username, watcher);
@@ -283,10 +337,10 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
         try {
           return await fn();
         } catch (error) {
-          logger.warn(`Attempt ${i + 1} failed`, {});
+          logger.warn(`Attempt ${i + 1} failed`, { error: error.message });
           if (i === retries - 1) throw error;
           const delay = baseDelay * Math.pow(2, i);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     };
@@ -304,11 +358,11 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
           cr2: ["49492a00"],
           cr3: ["66747970637278"],
           nef: ["4d4d002a"],
-          arw: ["49492a00", "4d4d002a"]
+          arw: ["49492a00", "4d4d002a"],
         };
         const firstBytes = buffer.slice(0, 8).toString("hex").toLowerCase();
-        return Object.values(magicNumbers).some(group =>
-          group.some(magic => firstBytes.startsWith(magic))
+        return Object.values(magicNumbers).some((group) =>
+          group.some((magic) => firstBytes.startsWith(magic))
         );
       } catch (error) {
         logger.error("Failed to validate file as image", { filePath, error: error.message });
@@ -318,7 +372,7 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
 
     const handleFileAdd = debounce(async (filePath) => {
       const fileName = path.basename(filePath);
-      logger.info("Chokidar detected new file", { filePath });
+      logger.info("Chokidar detected new file", { filePath, fileName, albumName, directory: absoluteDir });
 
       if (processedFiles.has(filePath)) {
         logger.info("File already processed", { filePath });
@@ -336,69 +390,130 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
         logger.info("File accessible", { filePath });
       } catch (error) {
         logger.error("File not accessible", { filePath, error: error.message });
-        mainWindow.webContents.send("image-stream", { action: "error", error: `File not accessible: ${fileName}` });
+        mainWindow.webContents.send("image-stream", {
+          action: "error",
+          error: `File not accessible: ${fileName}`,
+        });
         return;
       }
 
       const isImage = await isImageFile(filePath);
       if (!isImage) {
         logger.error("File is not a recognized image", { filePath });
-        mainWindow.webContents.send("image-stream", { action: "error", error: `Not an image: ${fileName}` });
+        mainWindow.webContents.send("image-stream", {
+          action: "error",
+          error: `Not an image: ${fileName}`,
+        });
         return;
       }
 
       const fileUrl = `file://${filePath.replace(/\\/g, "/")}`;
-      logger.info("Sending local file URL to frontend", { fileUrl });
+      const photoId = uuidv4();
+      const createdAt = new Date().toISOString();
+      logger.info("Processing photo for storage", { fileName, albumName, photoId, fileUrl });
+
+      if (!albumName || fileUrl.length > 255) {
+        logger.error("Invalid storage input", {
+          albumName,
+          fileUrlLength: fileUrl.length,
+        });
+        mainWindow.webContents.send("image-stream", {
+          action: "error",
+          error: `Invalid data for ${fileName}`,
+        });
+        return;
+      }
+
+      try {
+        await loadPhotosData();
+        if (!photosData[albumName]) {
+          photosData[albumName] = [];
+        }
+        const newPhoto = {
+          id: photoId,
+          albumName,
+          imageUrl: fileUrl,
+          createdAt,
+        };
+        photosData[albumName].push(newPhoto);
+        await savePhotosData();
+        logger.info("Photo inserted into JSON storage", {
+          photoId,
+          albumName,
+          fileUrl,
+          source: "User-selected album",
+          photosCount: photosData[albumName].length,
+        });
+        console.log("Current photosData after insert:", JSON.stringify(photosData, null, 2));
+      } catch (error) {
+        logger.error("Storage insertion error", {
+          filePath,
+          error: error.message,
+          stack: error.stack,
+        });
+        mainWindow.webContents.send("image-stream", {
+          action: "error",
+          error: `Failed to store photo: ${fileName}`,
+        });
+        return;
+      }
 
       mainWindow.webContents.send("image-stream", {
         action: "add",
         imageUrl: fileUrl,
-        filePath
+        filePath,
+        albumName,
       });
-      logger.info("Sent local file to frontend via IPC", { fileUrl });
-      try {
-        const response = await retry(() =>
-          fetch(`${SERVER_URL}/api/upload-photo`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({ albumId, imageUrl: fileUrl })
-          })
-        );
+      logger.info("Sent image-stream to frontend", { fileUrl, albumName });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          logger.error("Failed to save photo to database", {
-            imageUrl: fileUrl,
-            albumId,
-            status: response.status,
-            error: errorData.error || "Unknown error"
-          });
-          mainWindow.webContents.send("image-stream", { action: "error", error: `Database save failed: ${fileName}` });
-          throw new Error(errorData.error || "Failed to save photo to database");
-        }
+    //   try {
+    //     const response = await retry(() =>
+    //       fetch(`${SERVER_URL}/api/upload-photo`, {
+    //         method: "POST",
+    //         headers: {
+    //           "Content-Type": "application/json",
+    //           Authorization: `Bearer ${token}`,
+    //         },
+    //         body: JSON.stringify({ albumId, imageUrl: fileUrl }),
+    //       })
+    //     );
 
-        logger.info("Photo saved to database", { imageUrl: fileUrl, albumId });
-      } catch (error) {
-        logger.error("Database save error", {
-          filePath,
-          error: error.message,
-          stack: error.stack
-        });
-        mainWindow.webContents.send("image-stream", { action: "error", error: `Database save failed: ${fileName}` });
-      }
+    //     if (!response.ok) {
+    //       const errorData = await response.json();
+    //       logger.error("Failed to save photo to database", {
+    //         imageUrl: fileUrl,
+    //         albumId,
+    //         status: response.status,
+    //         error: errorData.error || "Unknown error",
+    //       });
+    //     } else {
+    //       logger.info("Photo saved to database", { imageUrl: fileUrl, albumId });
+    //     }
+    //   } catch (error) {
+    //     logger.error("Server database save error", {
+    //       filePath,
+    //       error: error.message,
+    //       stack: error.stack,
+    //     });
+    //   }
     }, 1000);
 
     watcher.on("add", handleFileAdd);
     watcher.on("error", (error) => {
-      logger.error("Chokidar error", { error: error.message });
+      logger.error("Chokidar error", { error: error.message, directory: absoluteDir });
     });
 
     logger.info("Returning FTP connection details", { host, username, password, ftpPort });
-    const credentialsToSave = { host, username: normalizedUsername, password, port: ftpPort, mode: "Passive" };
-    await mainWindow.webContents.executeJavaScript(`localStorage.setItem("ftpCredentials", ${JSON.stringify(JSON.stringify(credentialsToSave))})`);
+    const credentialsToSave = {
+      host,
+      username: normalizedUsername,
+      password,
+      port: ftpPort,
+      mode: "Passive",
+    };
+    await mainWindow.webContents.executeJavaScript(
+      `localStorage.setItem("ftpCredentials", ${JSON.stringify(JSON.stringify(credentialsToSave))})`
+    );
     return credentialsToSave;
   } catch (error) {
     logger.error("FTP Server failed to start", { error: error.message });
@@ -410,12 +525,65 @@ async function startFtpServer(username, directory, albumId, token, port = FTP_PO
   }
 }
 
+ipcMain.handle("fetch-photos", async (event, albumName) => {
+  logger.info("Fetching photos from JSON storage", { albumName });
+  try {
+    await loadPhotosData();
+    const photos = photosData[albumName] || [];
+    logger.info("Photos fetched successfully", { albumName, count: photos.length });
+    console.log("Photos data for fetch:", JSON.stringify(photosData, null, 2));
+    return photos.map((photo) => ({
+      id: photo.id,
+      albumName: photo.albumName,
+      url: photo.imageUrl,
+      createdAt: photo.createdAt,
+      caption: "",
+    }));
+  } catch (error) {
+    logger.error("Error fetching photos", { albumName, error: error.message });
+    throw error;
+  }
+});
+
+ipcMain.handle("delete-photo", async (event, { photoId }) => {
+  logger.info("Deleting photo from JSON storage", { photoId });
+  try {
+    await loadPhotosData();
+    for (const albumName in photosData) {
+      photosData[albumName] = photosData[albumName].filter((photo) => photo.id !== photoId);
+    }
+    await savePhotosData();
+    logger.info("Photo deleted successfully", { photoId });
+    return { success: true, changes: 1 };
+  } catch (error) {
+    logger.error("Error deleting photo", { photoId, error: error.message });
+    throw error;
+  }
+});
+
+ipcMain.handle("bulk-delete-photos", async (event, { photoIds }) => {
+  logger.info("Bulk deleting photos from JSON storage", { photoIds });
+  try {
+    await loadPhotosData();
+    for (const albumName in photosData) {
+      photosData[albumName] = photosData[albumName].filter((photo) => !photoIds.includes(photo.id));
+    }
+    await savePhotosData();
+    logger.info("Photos bulk deleted successfully", { photoIds });
+    return { success: true, changes: photoIds.length };
+  } catch (error) {
+    logger.error("Error bulk deleting photos", { photoIds, error: error.message });
+    throw error;
+  }
+});
+
 ipcMain.handle("get-ftp-credentials", async () => {
-  const credentials = Array.from(userCredentials.entries()).map(
-    ([username, { password }]) => {
+  const credentials = Array.from(userCredentials.entries())
+    .map(([username, { password }]) => {
       const normalizedUsername = username.replace(/\s+/g, "");
       const directory = directories.get(normalizedUsername);
       const albumId = albumIds.get(normalizedUsername);
+      const albumName = albumNames.get(normalizedUsername);
       const interfaces = os.networkInterfaces();
       const address = Object.values(interfaces)
         .flat()
@@ -431,44 +599,44 @@ ipcMain.handle("get-ftp-credentials", async () => {
         password,
         directory,
         albumId,
+        albumName,
         host,
         port,
-        mode: "Passive"
+        mode: "Passive",
       };
-    }
-  ).filter(cred => Object.keys(cred).length > 0);
+    })
+    .filter((cred) => Object.keys(cred).length > 0);
 
   logger.info("Returning stored credentials", { credentials });
   return credentials;
 });
 
 ipcMain.handle("check-ftp-status", async () => {
-  logger.info("Checking FTP server status");
+  // logger.info("Checking FTP server status");
   if (ftpServer && !ftpServer.closed) {
-    const credentials = Array.from(userCredentials.entries()).map(
-      ([username, { password }]) => {
-        const normalizedUsername = username.replace(/\s+/g, "");
-        const directory = directories.get(normalizedUsername);
-        const albumId = albumIds.get(normalizedUsername);
-        const interfaces = os.networkInterfaces();
-        const address = Object.values(interfaces)
-          .flat()
-          .filter((iface) => iface.family === "IPv4" && !iface.internal)
-          .map((iface) => iface.address);
-        const host = address[0] || "localhost";
-        const port = FTP_PORT;
-        return {
-          username: normalizedUsername,
-          password,
-          directory,
-          albumId,
-          host,
-          port,
-          mode: "Passive"
-        };
-      }
-    );
-    logger.info("FTP server is running", { credentials });
+    const credentials = Array.from(userCredentials.entries()).map(([username, { password }]) => {
+      const normalizedUsername = username.replace(/\s+/g, "");
+      const directory = directories.get(normalizedUsername);
+      const albumId = albumIds.get(normalizedUsername);
+      const albumName = albumNames.get(normalizedUsername);
+      const interfaces = os.networkInterfaces();
+      const address = Object.values(interfaces)
+        .flat()
+        .filter((iface) => iface.family === "IPv4" && !iface.internal)
+        .map((iface) => iface.address);
+      const host = address[0] || "localhost";
+      const port = FTP_PORT;
+      return {
+        username: normalizedUsername,
+        password,
+        directory,
+        albumId,
+        albumName,
+        host,
+        port,
+        mode: "Passive",
+      };
+    });
     return { isRunning: true, credentials };
   } else {
     logger.info("FTP server is not running");
@@ -477,194 +645,107 @@ ipcMain.handle("check-ftp-status", async () => {
 });
 
 ipcMain.handle("google-login", async () => {
-  logger.info("Starting Google OAuth flow");
+  logger.info("Initiating Google login");
+  const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(
+    REDIRECT_URI
+  )}&response_type=code&scope=email%20profile`;
 
-  if (authWindow) {
-    logger.warn("Authentication window already open");
-    throw new Error("An authentication window is already open");
-  }
+  authWindow = new BrowserWindow({
+    width: 600,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
 
-  return new Promise((resolve, reject) => {
-    try {
-      authWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
-        show: false,
-        parent: mainWindow,
-        modal: true,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true
-        }
-      });
+  logger.info("Loading OAuth URL", { oauthUrl });
+  authWindow.loadURL(oauthUrl);
 
-      if (!authWindow.webContents) {
-        logger.error("authWindow.webContents is undefined");
-        authWindow.destroy();
+  return new Promise((resolve) => {
+    authWindow.webContents.on("will-redirect", (event, url) => {
+      logger.info("Received redirect", { url });
+      if (url.startsWith(REDIRECT_URI)) {
+        const parsedUrl = new URL(url);
+        const code = parsedUrl.searchParams.get("code");
+        logger.info("Extracted auth code", { code });
+        authWindow.close();
         authWindow = null;
-        reject(new Error("Failed to initialize auth window"));
-        return;
+        resolve(code); // Return code directly
       }
+    });
 
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${GOOGLE_CLIENT_ID}&` +
-        `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
-        `response_type=code&` +
-        `scope=email profile&` +
-        `access_type=offline&` +
-        `prompt=consent`;
-
-      logger.info("Loading auth URL", { url: authUrl });
-      authWindow.loadURL(authUrl).catch((err) => {
-        logger.error("Failed to load auth URL", { error: err.message });
-        authWindow.destroy();
-        authWindow = null;
-        reject(new Error("Failed to load authentication page"));
-      });
-
-      authWindow.once("ready-to-show", () => {
-        logger.info("Auth window ready to show");
-        authWindow.show();
-      });
-
-      const timeout = setTimeout(() => {
-        logger.warn("Google OAuth flow timed out");
-        if (authWindow) {
-          authWindow.destroy();
-          authWindow = null;
-        }
-        reject(new Error("Authentication timed out"));
-      }, 120000);
-
-      const onRedirect = (event, url) => {
-        logger.info("Auth window will-redirect", { url });
-        if (url.startsWith(REDIRECT_URI)) {
-          const urlObj = new URL(url);
-          const code = urlObj.searchParams.get("code");
-          clearTimeout(timeout);
-          if (code) {
-            logger.info("Authorization code received", { code: code.slice(0, 10) + "..." });
-            authWindow.webContents.removeListener("will-redirect", onRedirect);
-            resolve(code);
-            setTimeout(() => {
-              if (authWindow) {
-                authWindow.destroy();
-                authWindow = null;
-              }
-            }, 100);
-          } else {
-            logger.error("No authorization code received");
-            authWindow.webContents.removeListener("will-redirect", onRedirect);
-            authWindow.destroy();
-            authWindow = null;
-            reject(new Error("No authorization code received"));
-          }
-        }
-      };
-      authWindow.webContents.on("will-redirect", onRedirect);
-
-      authWindow.webContents.once("did-fail-load", (event, errorCode, errorDescription) => {
-        logger.error("Auth page failed to load", { errorCode, errorDescription });
-        clearTimeout(timeout);
-        authWindow.webContents.removeListener("will-redirect", onRedirect);
-        authWindow.destroy();
-        authWindow = null;
-        reject(new Error(`Failed to load auth page: ${errorDescription}`));
-      });
-
-      authWindow.on("closed", () => {
-        logger.info("Auth window closed");
-        clearTimeout(timeout);
-        authWindow.webContents.removeListener("will-redirect", onRedirect);
-        authWindow = null;
-        reject(new Error("Authentication window closed"));
-      });
-    } catch (error) {
-      logger.error("Error in google-login handler", { error: error.message });
-      if (authWindow) {
-        authWindow.destroy();
-        authWindow = null;
-      }
-      reject(error);
-    }
+    authWindow.on("closed", () => {
+      logger.info("Auth window closed");
+      authWindow = null;
+      resolve({ error: "Authorization window closed" });
+    });
   });
 });
 
 ipcMain.handle("exchange-auth-code", async (event, code) => {
-  logger.info("Exchanging auth code");
+  logger.info("Exchanging auth code", { code });
   try {
-    const retry = async (fn, retries = 3, baseDelay = 1000) => {
-      for (let i = 0; i < retries; i++) {
-        try {
-          return await fn();
-        } catch (error) {
-          logger.warn(`Attempt ${i + 1} failed`, { error: error.message });
-          if (i === retries - 1) throw error;
-          const delay = baseDelay * Math.pow(2, i);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    };
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": `Electron/${process.versions.electron} MyApp/1.0.0`,
+      },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: REDIRECT_URI,
+        grant_type: "authorization_code",
+      }),
+    });
 
-    const tokenResponse = await retry(() =>
-      fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({
-          code,
-          client_id: GOOGLE_CLIENT_ID,
-          client_secret: GOOGLE_CLIENT_SECRET,
-          redirect_uri: REDIRECT_URI,
-          grant_type: "authorization_code"
-        })
-      })
-    );
-
-    if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.json();
-      logger.error("Failed to exchange auth code", { error: errorData.error_description });
-      throw new Error(errorData.error_description || "Failed to exchange code");
+    const data = await response.json();
+    if (data.error) {
+      logger.error("Failed to exchange auth code", { error: data.error, description: data.error_description });
+      return { error: data.error_description || "Failed to authenticate" };
     }
 
-    const result = await tokenResponse.json();
-    logger.info("Auth code exchanged successfully");
-    return result;
+    logger.info("Auth token received", { id_token: data.id_token });
+    return { id_token: data.id_token }; // Return id_token as expected by frontend
   } catch (error) {
-    logger.error("Error exchanging auth code", { error: error.message });
-    throw error;
+    logger.error("Error during auth code exchange", { error: error.message, stack: error.stack });
+    return { error: error.message };
   }
 });
 
-ipcMain.handle("ping", () => {
-  logger.info("Ping received");
-  return "pong";
+
+ipcMain.handle("ping", async () => {
+  logger.info("Ping received from renderer");
+  return "pong"; // Changed from { message: "pong" }
 });
 
 ipcMain.handle("dialog:selectFolder", async () => {
   logger.info("Opening folder selection dialog");
-  try {
-    const result = await dialog.showOpenDialog({
-      properties: ["openDirectory"]
-    });
-    return result.canceled ? null : result.filePaths[0];
-  } catch (error) {
-    logger.error("Failed to select folder", { error: error.message });
-    throw error;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+  });
+
+  if (result.canceled) {
+    logger.info("Folder selection canceled");
+    return null;
   }
+
+  logger.info("Folder selected", { path: result.filePaths[0] });
+  return result.filePaths[0];
 });
 
-ipcMain.handle("start-ftp", async (event, { username, directory, albumId, token }) => {
-  logger.info("Starting FTP server", { username, directory, albumId });
-  return await startFtpServer(username, directory, albumId, token);
+ipcMain.handle("start-ftp", async (event, { username, directory, albumId, albumName, token }) => {
+  logger.info("Starting FTP server", { username, directory, albumId, albumName });
+  return await startFtpServer(username, directory, albumId, albumName, token);
 });
 
 ipcMain.handle("reset-ftp-credentials", async () => {
   userCredentials.clear();
   directories.clear();
   albumIds.clear();
+  albumNames.clear();
   processedFiles.clear();
   watchers.forEach((watcher) => watcher.close());
   watchers.clear();
@@ -703,14 +784,21 @@ ipcMain.handle("regenerate-ftp-password", async (event, username) => {
   ftpPassword = newPassword;
   await saveFtpPassword(newPassword);
   userCredentials.set(normalizedUsername, { password: newPassword });
-  logger.info("New password generated and saved", { username: normalizedUsername, password: newPassword });
+  logger.info("New password generated and saved", {
+    username: normalizedUsername,
+    password: newPassword,
+  });
 
-  const savedCredentials = await mainWindow.webContents.executeJavaScript('localStorage.getItem("ftpCredentials")');
+  const savedCredentials = await mainWindow.webContents.executeJavaScript(
+    'localStorage.getItem("ftpCredentials")'
+  );
   if (savedCredentials) {
     const creds = JSON.parse(savedCredentials);
     if (creds.username === normalizedUsername) {
       creds.password = newPassword;
-      await mainWindow.webContents.executeJavaScript(`localStorage.setItem("ftpCredentials", ${JSON.stringify(JSON.stringify(creds))})`);
+      await mainWindow.webContents.executeJavaScript(
+        `localStorage.setItem("ftpCredentials", ${JSON.stringify(JSON.stringify(creds))})`
+      );
     }
   }
 
@@ -747,7 +835,7 @@ ipcMain.handle("upload-image", async (event, { base64Image, albumId, token }) =>
           logger.warn(`Attempt ${i + 1} failed`, { error: error.message });
           if (i === retries - 1) throw error;
           const delay = baseDelay * Math.pow(2, i);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     };
@@ -767,7 +855,7 @@ ipcMain.handle("upload-image", async (event, { base64Image, albumId, token }) =>
       cloudinary.uploader.upload(`data:image/jpeg;base64,${base64String}`, {
         folder: "albums",
         resource_type: "image",
-        public_id: publicId
+        public_id: publicId,
       })
     );
 
@@ -781,9 +869,9 @@ ipcMain.handle("upload-image", async (event, { base64Image, albumId, token }) =>
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ albumId, imageUrl: cloudinaryUrl })
+        body: JSON.stringify({ albumId, imageUrl: cloudinaryUrl }),
       })
     );
 
@@ -793,7 +881,7 @@ ipcMain.handle("upload-image", async (event, { base64Image, albumId, token }) =>
         cloudinaryUrl,
         albumId,
         status: response.status,
-        error: errorData.error || "Unknown error"
+        error: errorData.error || "Unknown error",
       });
       throw new Error(errorData.error || "Failed to save photo to database");
     }
@@ -803,6 +891,98 @@ ipcMain.handle("upload-image", async (event, { base64Image, albumId, token }) =>
   } catch (error) {
     logger.error("Image upload error", { error: error.message });
     return { error: error.message };
+  }
+});
+
+ipcMain.handle("sync-photos-to-cloud", async (event, { albumName, albumId, token }) => {
+  logger.info("Syncing photos to cloud", { albumName, albumId });
+
+  try {
+    await loadPhotosData();
+    const localPhotos = photosData[albumName] || [];
+    logger.info("Local photos fetched for sync", { albumName, count: localPhotos.length });
+
+    const retry = async (fn, retries = 3, baseDelay = 1000) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          return await fn();
+        } catch (error) {
+          logger.warn(`Attempt ${i + 1} failed`, { error: error.message });
+          if (i === retries - 1) throw error;
+          const delay = baseDelay * Math.pow(2, i);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    };
+
+    const syncedPhotos = [];
+    for (const photo of localPhotos) {
+      try {
+        if (photo.imageUrl.startsWith("https://res.cloudinary.com")) {
+          logger.info("Photo already in cloud", { photoId: photo.id, url: photo.imageUrl });
+          syncedPhotos.push(photo);
+          continue;
+        }
+
+        const filePath = photo.imageUrl.replace(/^file:\/\//, "").replace(/\//g, path.sep);
+        const fileBuffer = await fs.readFile(filePath);
+        const base64Image = fileBuffer.toString("base64");
+
+        const publicId = `image-${crypto.randomUUID()}`;
+        const uploadResult = await retry(() =>
+          cloudinary.uploader.upload(`data:image/jpeg;base64,${base64Image}`, {
+            folder: "albums",
+            resource_type: "image",
+            public_id: publicId,
+          })
+        );
+
+        const cloudinaryUrl = uploadResult.secure_url;
+        logger.info("Image uploaded to Cloudinary", { photoId: photo.id, cloudinaryUrl });
+
+        const response = await retry(() =>
+          fetch(`${SERVER_URL}/api/upload-photo`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ albumId, imageUrl: cloudinaryUrl }),
+          })
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          logger.error("Failed to save photo to server database", {
+            cloudinaryUrl,
+            albumId,
+            status: response.status,
+            error: errorData.error || "Unknown error",
+          });
+          throw new Error(errorData.error || "Failed to save photo to server");
+        }
+
+        photosData[albumName] = photosData[albumName].map((p) =>
+          p.id === photo.id ? { ...p, imageUrl: cloudinaryUrl } : p
+        );
+        await savePhotosData();
+        logger.info("Updated photo URL in JSON storage", {
+          photoId: photo.id,
+          cloudinaryUrl,
+          albumName,
+          source: "User-selected album",
+        });
+
+        syncedPhotos.push({ ...photo, url: cloudinaryUrl, imageUrl: cloudinaryUrl });
+      } catch (error) {
+        logger.error("Failed to sync photo", { photoId: photo.id, error: error.message });
+      }
+    }
+
+    return syncedPhotos;
+  } catch (error) {
+    logger.error("Error syncing photos to cloud", { albumName, error: error.message });
+    throw error;
   }
 });
 
@@ -872,16 +1052,23 @@ ipcMain.handle("node-version", async () => {
 });
 
 app.whenReady().then(async () => {
-  await loadFtpPassword();
-  logger.info("Electron app starting");
-  createWindow();
-  Menu.setApplicationMenu(null);
+  try {
+    await loadFtpPassword();
+    await loadPhotosData();
+    logger.info("Electron app starting");
+    createWindow();
+    Menu.setApplicationMenu(null);
+  } catch (error) {
+    logger.error("App initialization failed", { error: error.message });
+  }
 });
 
 const notifyRendererToClearCredentials = () => {
   const windows = BrowserWindow.getAllWindows();
   windows.forEach((win) => {
-    win.webContents.send("clear-ftp-credentials", { message: "App is closing, clear FTP credentials and localStorage" });
+    win.webContents.send("clear-ftp-credentials", {
+      message: "App is closing, clear FTP credentials and localStorage",
+    });
     logger.info("Notified renderer to clear FTP credentials and localStorage");
   });
 };

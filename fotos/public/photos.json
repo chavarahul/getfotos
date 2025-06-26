@@ -1,0 +1,37 @@
+{
+  "detrfygtuyhijuiokpol": [],
+  "Love": [
+    {
+      "id": "ff48c8c8-8e83-4158-944e-3da05c0b993d",
+      "albumName": "Love",
+      "imageUrl": "file://C:/Users/chava/OneDrive/Desktop/article-scraper/medium-viewer/src/Blog2.webp",
+      "createdAt": "2025-06-14T06:20:51.555Z"
+    },
+    {
+      "id": "b84b9dd0-6275-45ce-b81b-d4bdcf0938f0",
+      "albumName": "Love",
+      "imageUrl": "file://C:/Users/chava/OneDrive/Desktop/article-scraper/medium-viewer/src/ChickenBiriyani.webp",
+      "createdAt": "2025-06-14T06:21:14.863Z"
+    },
+    {
+      "id": "b89094c5-bcb0-4a85-9902-24087b8a9b15",
+      "albumName": "Love",
+      "imageUrl": "file://C:/Users/chava/OneDrive/Desktop/article-scraper/medium-viewer/src/commit4.png",
+      "createdAt": "2025-06-14T16:34:54.063Z"
+    }
+  ],
+  "Happieee": [
+    {
+      "id": "73e4e17c-b5a3-40b7-b98a-313eba891018",
+      "albumName": "Happieee",
+      "imageUrl": "https://res.cloudinary.com/dxfujspwu/image/upload/v1749919450/albums/image-71986990-ba52-462b-8b2d-0584d3dd05c8.png",
+      "createdAt": "2025-06-14T16:43:24.215Z"
+    },
+    {
+      "id": "b27e3e0f-3edc-4cd0-8d78-11c128b652f0",
+      "albumName": "Happieee",
+      "imageUrl": "https://res.cloudinary.com/dxfujspwu/image/upload/v1749919458/albums/image-480c7e39-99b5-4e7c-9e9b-799be711e443.jpg",
+      "createdAt": "2025-06-14T16:43:39.822Z"
+    }
+  ]
+}

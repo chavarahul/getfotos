@@ -68,7 +68,7 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
   });
 
   const handleNavigate = () => {
-    navigate(`/album/${album.id}`);
+    navigate(`/album/${album.name}`);
   };
 
   const formattedDate = new Date(album.date).toLocaleDateString("en-US", {
