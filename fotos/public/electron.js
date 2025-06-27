@@ -11,7 +11,6 @@ const { v4: uuidv4 } = require("uuid");
 const debounce = require("lodash.debounce");
 const cloudinary = require("cloudinary").v2;
 const net = require("net");
-
 require("dotenv").config();
 
 process.on("uncaughtException", (error) => {
@@ -23,17 +22,17 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 const GOOGLE_CLIENT_ID = "496438207267-5sm1joa903t9k6ddgv5ulaigq8qvql46.apps.googleusercontent.com";
-const GOOGLE_CLIENT_SECRET =  "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";
+const GOOGLE_CLIENT_SECRET = "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";
 
-const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:3000/api/auth/callback/google";
-const SERVER_URL = process.env.SERVER_URL || "https://backend-google-three.vercel.app";
-const FTP_PORT = parseInt(process.env.FTP_PORT, 10) || 2121;
-const FTP_PASV_RANGE = process.env.FTP_PASV_RANGE || "8000-9000";
+const REDIRECT_URI ="http://localhost:3000/api/auth/callback/google";
+const SERVER_URL =  "https://backend-google-three.vercel.app";
+const FTP_PORT = 2121;
+const FTP_PASV_RANGE = "8000-9000";
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "your-cloud-name",
-  api_key: process.env.CLOUDINARY_API_KEY || "your-api-key",
-  api_secret: process.env.CLOUDINARY_API_SECRET || "your-api-secret",
+  cloud_name: "your-cloud-name",
+  api_key: "your-api-key",
+  api_secret:  "your-api-secret",
 });
 
 const logger = winston.createLogger({
@@ -62,6 +61,23 @@ const photosFilePath = path.join(__dirname, "photos.json");
 
 let ftpPassword = DEFAULT_FTP_PASSWORD;
 let photosData = {};
+
+const DATA_DIR = path.join(__dirname, "data");
+const ALBUM_FILE_PATH = path.join(DATA_DIR, "album.json");
+const IMAGE_DIR_PATH = path.join(DATA_DIR, "images");
+
+async function ensureAlbumFileStructure() {
+  console.log("Ensuring directory structure for:", DATA_DIR);
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
+
+  try {
+    await fs.access(ALBUM_FILE_PATH);
+  } catch {
+    console.log("Creating initial album.json at:", ALBUM_FILE_PATH);
+    await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
+  }
+}
 
 const loadFtpPassword = async () => {
   try {
@@ -163,10 +179,11 @@ const createWindow = () => {
     },
   });
 
-  const startUrl =
-    process.env.NODE_ENV === "development"
-      ? "http://localhost:3000"
-      : `file://${path.join(__dirname, "../dist/index.html")}`;
+  // const startUrl = "http://localhost:3000";
+  //   process.env.NODE_ENV === "development"
+  //     ? "http://localhost:3000"
+  //     : 
+  const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
 
   mainWindow.loadURL(startUrl);
   mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -466,36 +483,36 @@ async function startFtpServer(username, directory, albumId, albumName, token, po
       });
       logger.info("Sent image-stream to frontend", { fileUrl, albumName });
 
-    //   try {
-    //     const response = await retry(() =>
-    //       fetch(`${SERVER_URL}/api/upload-photo`, {
-    //         method: "POST",
-    //         headers: {
-    //           "Content-Type": "application/json",
-    //           Authorization: `Bearer ${token}`,
-    //         },
-    //         body: JSON.stringify({ albumId, imageUrl: fileUrl }),
-    //       })
-    //     );
+      //   try {
+      //     const response = await retry(() =>
+      //       fetch(`${SERVER_URL}/api/upload-photo`, {
+      //         method: "POST",
+      //         headers: {
+      //           "Content-Type": "application/json",
+      //           Authorization: `Bearer ${token}`,
+      //         },
+      //         body: JSON.stringify({ albumId, imageUrl: fileUrl }),
+      //       })
+      //     );
 
-    //     if (!response.ok) {
-    //       const errorData = await response.json();
-    //       logger.error("Failed to save photo to database", {
-    //         imageUrl: fileUrl,
-    //         albumId,
-    //         status: response.status,
-    //         error: errorData.error || "Unknown error",
-    //       });
-    //     } else {
-    //       logger.info("Photo saved to database", { imageUrl: fileUrl, albumId });
-    //     }
-    //   } catch (error) {
-    //     logger.error("Server database save error", {
-    //       filePath,
-    //       error: error.message,
-    //       stack: error.stack,
-    //     });
-    //   }
+      //     if (!response.ok) {
+      //       const errorData = await response.json();
+      //       logger.error("Failed to save photo to database", {
+      //         imageUrl: fileUrl,
+      //         albumId,
+      //         status: response.status,
+      //         error: errorData.error || "Unknown error",
+      //       });
+      //     } else {
+      //       logger.info("Photo saved to database", { imageUrl: fileUrl, albumId });
+      //     }
+      //   } catch (error) {
+      //     logger.error("Server database save error", {
+      //       filePath,
+      //       error: error.message,
+      //       stack: error.stack,
+      //     });
+      //   }
     }, 1000);
 
     watcher.on("add", handleFileAdd);
@@ -652,7 +669,7 @@ ipcMain.handle("google-login", async () => {
 
   authWindow = new BrowserWindow({
     width: 600,
-    height: 800,
+    height: 600,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -671,7 +688,7 @@ ipcMain.handle("google-login", async () => {
         logger.info("Extracted auth code", { code });
         authWindow.close();
         authWindow = null;
-        resolve(code); // Return code directly
+        resolve(code);
       }
     });
 
@@ -708,17 +725,196 @@ ipcMain.handle("exchange-auth-code", async (event, code) => {
     }
 
     logger.info("Auth token received", { id_token: data.id_token });
-    return { id_token: data.id_token }; // Return id_token as expected by frontend
+
+    return { id_token: data.id_token };
   } catch (error) {
     logger.error("Error during auth code exchange", { error: error.message, stack: error.stack });
     return { error: error.message };
   }
 });
 
+ipcMain.handle('save-user', async (_event, user) => {
+  try {
+    const dirPath = path.join(__dirname, 'data');
+    const filePath = path.join(dirPath, 'user.json');
+    await fs.mkdir(dirPath, { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(user, null, 2), 'utf-8');
+    return { success: true };
+  } catch (err) {
+    console.error("Error saving user:", err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("load-user", async () => {
+  try {
+    const filePath = path.join(__dirname, "data", "user.json");
+    const data = await fs.readFile(filePath, "utf-8");
+    const user = JSON.parse(data);
+    return { success: true, user };
+  } catch (error) {
+    console.error("Failed to load user:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("albums:get", async () => {
+  // logger.info("Fetching albums");
+  try {
+
+    const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
+    const albums = JSON.parse(raw);
+    // logger.info("Albums loaded successfully", { count: albums.length, filePath: ALBUM_FILE_PATH });
+    return albums;
+  } catch (err) {
+    logger.error("Error loading albums", { error: err.message, stack: err.stack });
+    return [];
+  }
+});
+
+
+ipcMain.handle("albums:create", async (event, album) => {
+  const { name, date, image } = album;
+  logger.info("Creating new album", { album, ALBUM_FILE_PATH, IMAGE_DIR_PATH });
+
+  try {
+    const albumDir = path.dirname(ALBUM_FILE_PATH);
+    await fs.mkdir(albumDir, { recursive: true });
+    logger.info("Directory ensured", { path: albumDir });
+    await fs.access(albumDir, fs.constants.W_OK);
+    logger.info("Directory is writable");
+
+    try {
+      await fs.access(ALBUM_FILE_PATH, fs.constants.W_OK);
+      logger.info("Albums file exists and is writable");
+    } catch (err) {
+      logger.info("Albums file doesn't exist, creating empty array");
+      await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]));
+    }
+
+    logger.info("Reading current albums");
+    let albums = [];
+    try {
+      const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
+      if (raw.trim() === "") {
+        logger.info("Albums file is empty, initializing with empty array");
+        albums = [];
+      } else {
+        albums = JSON.parse(raw);
+        logger.info("Current albums before creation", { albums });
+      }
+    } catch (err) {
+      logger.error("Failed to read or parse albums file", { error: err.message, stack: err.stack });
+      if (err.code === 'ENOENT') {
+        logger.info("Albums file not found, creating new one");
+        await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]));
+      } else {
+        throw err;
+      }
+    }
+    let newId = 1;
+    if (albums.length > 0) {
+      const lastAlbum = albums[albums.length - 1];
+      const lastId = parseInt(lastAlbum.id, 10);
+      newId = isNaN(lastId) ? albums.length + 1 : lastId + 1;
+    }
+    let imagePath = "";
+    if (image?.base64 && image?.name) {
+      const extension = path.extname(image.name);
+      imagePath = path.join(IMAGE_DIR_PATH, `${newId}${extension}`);
+      await fs.mkdir(path.dirname(IMAGE_DIR_PATH), { recursive: true });
+      const base64Data = image.base64.replace(/^data:image\/\w+;base64,/, "");
+      await fs.writeFile(imagePath, base64Data, "base64");
+      logger.info("Image saved", { path: imagePath });
+    }
+
+    const newAlbum = { id: newId.toString(), name, date, imagePath };
+    albums.push(newAlbum);
+    logger.info("Writing updated albums", { albums });
+    await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
+
+    logger.info("Verifying write");
+    const verifyRaw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
+    logger.info("Verified content", { content: verifyRaw });
+
+    return newAlbum;
+  } catch (error) {
+    logger.error("Failed to create album", { error: error.message, stack: error.stack, album, ALBUM_FILE_PATH });
+    return { success: false, error: error.message, stack: error.stack };
+  }
+});
+
+ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
+  logger.info("Updating album", { id, name, date, image });
+  try {
+    await ensureAlbumFileStructure();
+    const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
+    const albums = JSON.parse(raw);
+
+    const index = albums.findIndex((a) => a.id === id);
+    if (index === -1) {
+      logger.error("Album not found", { id });
+      throw new Error("Album not found");
+    }
+
+    let imagePath = albums[index].imagePath;
+    if (image?.base64 && image?.name) {
+      const extension = path.extname(image.name);
+      imagePath = path.join(IMAGE_DIR_PATH, `${id}${extension}`);
+      const base64Data = image.base64.replace(/^data:image\/\w+;base64,/, "");
+      await fs.writeFile(imagePath, base64Data, "base64");
+      logger.info("Updated image saved", { path: imagePath });
+    }
+
+    albums[index] = { id, name, date, imagePath };
+    await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
+    logger.info("Album updated successfully", { id, filePath: ALBUM_FILE_PATH });
+
+    return albums[index];
+  } catch (err) {
+    logger.error("Error updating album", { error: err.message, stack: err.stack });
+    throw err;
+  }
+});
+
+ipcMain.handle("albums:delete", async (_, id) => {
+  logger.info("Deleting album", { id });
+  try {
+    await ensureAlbumFileStructure();
+    const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
+    let albums = JSON.parse(raw);
+    const album = albums.find((a) => a.id === id);
+
+    if (!album) {
+      logger.error("Album not found for deletion", { id });
+      return { success: false, error: "Album not found" };
+    }
+
+    albums = albums.filter((a) => a.id !== id);
+
+    if (album.imagePath) {
+      try {
+        await fs.unlink(album.imagePath);
+        logger.info("Image deleted", { path: album.imagePath });
+      } catch (err) {
+        logger.warn("Failed to delete image, continuing", { path: album.imagePath, error: err.message });
+      }
+    }
+
+    await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
+    logger.info("Album deleted successfully", { id, filePath: ALBUM_FILE_PATH });
+
+    return { success: true };
+  } catch (err) {
+    logger.error("Error deleting album", { error: err.message, stack: err.stack });
+    return { success: false, error: err.message };
+  }
+});
+
 
 ipcMain.handle("ping", async () => {
   logger.info("Ping received from renderer");
-  return "pong"; // Changed from { message: "pong" }
+  return "pong";
 });
 
 ipcMain.handle("dialog:selectFolder", async () => {
@@ -1051,10 +1247,64 @@ ipcMain.handle("node-version", async () => {
   return process.version;
 });
 
+// --- Album CRUD handlers (file-based, albums.json) ---
+const albumsFilePath = path.join(app.getPath("userData"), "albums.json");
+
+const loadAlbumsData = async () => {
+  try {
+    const data = await fs.readFile(albumsFilePath, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      await fs.writeFile(albumsFilePath, JSON.stringify([], null, 2));
+      return [];
+    }
+    throw error;
+  }
+};
+
+const saveAlbumsData = async (albums) => {
+  await fs.writeFile(albumsFilePath, JSON.stringify(albums, null, 2));
+};
+
+ipcMain.handle("fetch-albums", async () => {
+  logger.info("Fetching albums from albums.json");
+  return await loadAlbumsData();
+});
+
+ipcMain.handle("create-album", async (event, album) => {
+  logger.info("Creating new album", { album });
+  const albums = await loadAlbumsData();
+  const newAlbum = { ...album, id: uuidv4(), createdAt: new Date().toISOString() };
+  albums.push(newAlbum);
+  await saveAlbumsData(albums);
+  return newAlbum;
+});
+
+ipcMain.handle("update-album", async (event, updatedAlbum) => {
+  logger.info("Updating album", { updatedAlbum });
+  const albums = await loadAlbumsData();
+  const idx = albums.findIndex((a) => a.id === updatedAlbum.id);
+  if (idx === -1) throw new Error("Album not found");
+  albums[idx] = { ...albums[idx], ...updatedAlbum };
+  await saveAlbumsData(albums);
+  return albums[idx];
+});
+
+ipcMain.handle("delete-album", async (event, albumId) => {
+  logger.info("Deleting album", { albumId });
+  let albums = await loadAlbumsData();
+  const before = albums.length;
+  albums = albums.filter((a) => a.id !== albumId);
+  await saveAlbumsData(albums);
+  return { success: true, removed: before - albums.length };
+});
+
 app.whenReady().then(async () => {
   try {
     await loadFtpPassword();
     await loadPhotosData();
+    await ensureAlbumFileStructure();
     logger.info("Electron app starting");
     createWindow();
     Menu.setApplicationMenu(null);

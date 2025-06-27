@@ -1,13 +1,12 @@
 import AlbumHeader from "../components/album/AlbumHeader";
 import AlbumCard from "../components/album/AlbumCard";
 import { PageLoader, ErrorDisplay } from "../components/common/loaders";
-import axiosInstance from "../utils/api";
 import type { Album } from "../constants/type";
 import { useQuery } from "@tanstack/react-query";
 
-const fetchAlbums = async () => {
-  const { data } = await axiosInstance.get<Album[]>("/api/albums");
-  return data;
+const fetchAlbums = async (): Promise<Album[]> => {
+  const result = await window.electronAPI.getAlbums();
+  return result;
 };
 
 const Dashboard: React.FC = () => {
@@ -15,7 +14,7 @@ const Dashboard: React.FC = () => {
     queryKey: ["albums"],
     queryFn: fetchAlbums,
     staleTime: 1000 * 5,
-    refetchInterval: 1000 * 5, 
+    refetchInterval: 1000 * 5,
     retry: 1,
   });
 
@@ -29,9 +28,7 @@ const Dashboard: React.FC = () => {
 
   if (error) {
     return (
-      <ErrorDisplay
-        message={(error as any)?.response?.data?.error || "Failed to fetch albums"}
-      />
+      <ErrorDisplay message={(error as any)?.message || "Failed to fetch albums"} />
     );
   }
 

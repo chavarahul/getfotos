@@ -33,5 +33,13 @@
       "imageUrl": "https://res.cloudinary.com/dxfujspwu/image/upload/v1749919458/albums/image-480c7e39-99b5-4e7c-9e9b-799be711e443.jpg",
       "createdAt": "2025-06-14T16:43:39.822Z"
     }
+  ],
+  "zzzzzzzzzzzzz": [
+    {
+      "id": "0f989738-4a86-417f-be69-923316748f0a",
+      "albumName": "zzzzzzzzzzzzz",
+      "imageUrl": "file://C:/Users/chava/OneDrive/Desktop/article-scraper/medium-viewer/src/9e03cf23-bd1f-4411-a318-0e615670b084.png",
+      "createdAt": "2025-06-27T05:47:10.893Z"
+    }
   ]
 }

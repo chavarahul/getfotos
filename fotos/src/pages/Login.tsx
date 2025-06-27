@@ -109,6 +109,13 @@ const Login = () => {
           throw new Error("No token received from backend");
         }
 
+        const saveResult = await window.electronAPI.saveUser(userData);
+        if (!saveResult.success) {
+          console.error("Failed to save user locally:", saveResult.error);
+        } else {
+          console.log("User data saved locally via Electron IPC.");
+        }
+
         localStorage.setItem("token", response.data.token);
         toast.success("Login Successful");
         console.log(response.data.token)

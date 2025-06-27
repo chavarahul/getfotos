@@ -11,17 +11,8 @@ export const useAuth = () => {
         setIsAuthenticated(false);
         return;
       }
-
-      try {
-        await axiosInstance.get("/api/auth/verify-token");
-        setIsAuthenticated(true);
-      } catch (error) {
-        console.error("Token verification failed:", error);
-        localStorage.removeItem("token");
-        setIsAuthenticated(false);
-      }
+      setIsAuthenticated(true)
     };
-
     verifyToken();
   }, []);
 

@@ -17,31 +17,16 @@ import {
 } from "lucide-react";
 import { ButtonLoader } from "../common/loaders";
 import type { Album } from "../../constants/type";
-import axiosInstance from "../../utils/api";
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface AlbumCardProps {
   album: Album;
 }
 
-const fetchUser = async () => {
-  const { data } = await axiosInstance.get<{ userId: string; name: string }>(
-    "/api/auth/user-id"
-  );
-  return { id: data.userId, name: data.name || "User" };
-};
-
 const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
-  const [isImageLoading, setIsImageLoading] = useState<boolean>(true);
+  const [isImageLoading, setIsImageLoading] = useState(true);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
-  const { data: user } = useQuery({
-    queryKey: ["user"],
-    queryFn: fetchUser,
-    staleTime: 1000 * 60 * 5,
-    retry: 1,
-  });
 
   const token = localStorage.getItem("token");
   if (!token) {
@@ -50,26 +35,18 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
   }
 
   const deleteAlbumMutation = useMutation({
-    mutationFn: async (albumId: string) => {
-      await axiosInstance.delete(`/api/albums/${albumId}`);
+    mutationFn: async (id: string) => {
+      const res = await window.electronAPI.deleteAlbum(id);
+      if (!res.success) throw new Error("Failed to delete album");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["albums"] });
-      if (user?.id) {
-        queryClient.invalidateQueries({ queryKey: ["albums", user.id] });
-      }
       toast.success("Album deleted successfully.");
     },
-    onError: (error: any) => {
-      toast.error(
-        `Failed to delete album: ${error.response?.data?.error || "Unknown error"}`
-      );
+    onError: (err: any) => {
+      toast.error(err?.message || "Failed to delete album.");
     },
   });
-
-  const handleNavigate = () => {
-    navigate(`/album/${album.name}`);
-  };
 
   const formattedDate = new Date(album.date).toLocaleDateString("en-US", {
     year: "numeric",
@@ -80,11 +57,15 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
   const truncatedName =
     album.name.length > 24 ? `${album.name.substring(0, 24)}...` : album.name;
 
+  const handleNavigate = () => {
+    navigate(`/album/${album.name}`);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+      transition={{ duration: 0.5 }}
       className="w-full"
     >
       <motion.div
@@ -93,11 +74,11 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
           boxShadow:
             "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
         }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
+        transition={{ duration: 0.4 }}
         className="overflow-hidden rounded-2xl bg-white border border-gray-100 relative"
       >
         <div className="relative aspect-[3/4] w-full overflow-hidden h-60">
-          {album.coverImage ? (
+          {album.imagePath ? (
             <>
               {isImageLoading && (
                 <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
@@ -105,11 +86,11 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
                 </div>
               )}
               <motion.img
-                src={album.coverImage}
+                src={`file://${album.imagePath}`}
                 alt={album.name}
                 loading="lazy"
                 whileHover={{ scale: 1.1 }}
-                transition={{ duration: 0.7, ease: [0.34, 1.56, 0.64, 1] }}
+                transition={{ duration: 0.7 }}
                 className={`w-full h-full object-cover transition-opacity duration-300 ${
                   isImageLoading ? "opacity-0" : "opacity-100"
                 }`}
@@ -133,7 +114,7 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
           <div className="absolute top-3 right-3 z-10">
             <Badge className="bg-black/40 text-white border-none px-3 py-1 font-medium text-xs flex items-center gap-1.5">
               <Camera className="w-3 h-3" />
-              {album.photoCount} Photo{album.photoCount !== 1 ? "s" : ""}
+              {album.photoCount || 0} Photo{album.photoCount !== 1 ? "s" : ""}
             </Badge>
           </div>
 
@@ -148,7 +129,6 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
               <Button
                 onClick={handleNavigate}
                 className="bg-white hover:bg-white text-black hover:text-black rounded-full w-12 h-12 shadow-xl transition-transform duration-200 hover:scale-110"
-                aria-label="View album"
               >
                 <ArrowUpRight className="w-5 h-5" />
               </Button>
@@ -171,25 +151,18 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
               <Button
                 onClick={handleNavigate}
                 className="bg-black/95 hover:bg-black/85 text-white flex-1 rounded-[6px] flex items-center gap-2"
-                aria-label="View album details"
               >
                 <GalleryVertical className="w-4 h-4" />
                 <span>View Album</span>
               </Button>
               <div className="flex gap-1">
                 <AlbumFormDialog
-                  albumToEdit={{
-                    id: album.id,
-                    name: album.name,
-                    date: album.date,
-                    coverImage: album.coverImage,
-                  }}
+                  albumToEdit={album}
                   trigger={
                     <Button
                       variant="outline"
                       size="icon"
                       className="border-gray-200 hover:border-gray-300 rounded-[6px] h-10 w-10"
-                      aria-label="Edit album"
                     >
                       <Pencil className="w-4 h-4" />
                     </Button>
@@ -201,7 +174,6 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
                   onClick={() => deleteAlbumMutation.mutate(album.id)}
                   disabled={deleteAlbumMutation.isPending}
                   className="border-gray-200 hover:border-red-200 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-[6px] h-10 w-10"
-                  aria-label="Delete album"
                 >
                   {deleteAlbumMutation.isPending ? (
                     <ButtonLoader className="border-red-600" />

@@ -8,7 +8,6 @@ import { ScrollArea } from "../components/ui/scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../components/ui/button";
 import { debounce } from "lodash";
-import { fetchAlbums, fetchUser } from "@/lib/actions";
 
 const cameras: Camera[] = [
   { id: "cam1", name: "Canon EOS R5" },
@@ -16,7 +15,16 @@ const cameras: Camera[] = [
   { id: "cam3", name: "Nikon Z9" },
 ];
 
+const fetchUser = async () => {
+  const res = await window.electronAPI.loadUser();
+  if (!res.success) throw new Error(res.error || "Failed to load user");
+  return res.user;
+};
 
+const fetchAlbums = async () => {
+  const albums = await window.electronAPI.getAlbums();
+  return albums; 
+};
 
 const Connect: React.FC = () => {
   const navigate = useNavigate();
@@ -29,42 +37,39 @@ const Connect: React.FC = () => {
     }
   }, [token, navigate]);
 
-  const { data: user, isLoading: isUserLoading, error: userError, refetch: refetchUser } = useQuery({
+  const {
+    data: user,
+    isLoading: isUserLoading,
+    error: userError,
+    refetch: refetchUser,
+  } = useQuery({
     queryKey: ["user"],
     queryFn: fetchUser,
     enabled: !!token,
-    retry: 3,
-    staleTime: 1000 * 60 * 5,
   });
 
-  const { data: albums = [], isLoading: isAlbumsLoading, error: albumsError, refetch: refetchAlbums } = useQuery({
-    queryKey: ["albums", user?.id],
-    queryFn: () => fetchAlbums(user!.id),
-    enabled: !!user?.id,
-    staleTime: 1000 * 30,
-    refetchInterval: user?.id ? 1000 * 5 : undefined,
-    retry: 3,
+  const {
+    data: albums = [],
+    isLoading: isAlbumsLoading,
+    error: albumsError,
+    refetch: refetchAlbums,
+  } = useQuery({
+    queryKey: ["albums"],
+    queryFn: fetchAlbums,
+    enabled: !!user,
   });
 
   useEffect(() => {
     const handleAlbumRefresh = debounce(() => {
-      if (user?.id) {
-        console.log("Invalidating albums query for user:", user.id);
-        queryClient.invalidateQueries({ queryKey: ["albums", user.id] });
-      }
+      queryClient.invalidateQueries({ queryKey: ["albums"] });
     }, 300);
 
     window.addEventListener("albumRefresh", handleAlbumRefresh);
     return () => {
       window.removeEventListener("albumRefresh", handleAlbumRefresh);
-      handleAlbumRefresh.cancel(); // Cleanup debounce
+      handleAlbumRefresh.cancel();
     };
-  }, [user?.id, queryClient]);
-
-  useEffect(() => {
-    console.log("User state:", { user, isUserLoading, userError });
-    console.log("Albums state:", { albums, isAlbumsLoading, albumsError });
-  }, [user, isUserLoading, userError, albums, isAlbumsLoading, albumsError]);
+  }, [queryClient]);
 
   if (userError || albumsError) {
     return (
@@ -114,7 +119,7 @@ const Connect: React.FC = () => {
             You don’t have any albums yet. Create an album to start connecting with your camera.
           </p>
           <Button
-            onClick={() => navigate("/dashboard")} // Adjust route as needed
+            onClick={() => navigate("/dashboard")}
             className="bg-black text-white hover:bg-gray-800"
           >
             Go to Dashboard
