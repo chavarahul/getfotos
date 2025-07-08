@@ -6,7 +6,7 @@ export const useAuth = () => {
 
   useEffect(() => {
     const verifyToken = async () => {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("result");
       if (!token) {
         setIsAuthenticated(false);
         return;

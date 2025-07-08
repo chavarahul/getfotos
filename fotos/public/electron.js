@@ -63,49 +63,41 @@ let ftpPassword = DEFAULT_FTP_PASSWORD;
 let photosData = {};
 
 
-const DATA_DIR = path.join(__dirname, "data");
-const ALBUM_FILE_PATH = path.join(DATA_DIR, "album.json");
-const IMAGE_DIR_PATH = path.join(DATA_DIR, "images");
+const DATA_DIR = path.join(app.getPath('userData'), 'data');
+const ALBUM_FILE_PATH = path.join(DATA_DIR, 'album.json');
+const IMAGE_DIR_PATH = path.join(DATA_DIR, 'images');
 
 async function ensureAlbumFileStructure() {
-  console.log("Ensuring directory structure for:", DATA_DIR);
+  console.log('Ensuring directory structure for:', DATA_DIR);
 
-  // Check if DATA_DIR exists and is a file; if so, remove it
   try {
-    const dataDirStat = await fs.stat(DATA_DIR);
-    if (dataDirStat.isFile()) {
-      console.log(`Removing file at ${DATA_DIR} to create directory`);
-      await fs.unlink(DATA_DIR);
+    // Create DATA_DIR and IMAGE_DIR_PATH
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
+
+    // Ensure album.json exists and is a file
+    try {
+      const albumFileStat = await fs.stat(ALBUM_FILE_PATH);
+      if (!albumFileStat.isFile()) {
+        console.log(`Removing non-file at ${ALBUM_FILE_PATH} to create file`);
+        await fs.rm(ALBUM_FILE_PATH, { recursive: true, force: true });
+        await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), 'utf-8');
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        console.log('Creating initial album.json at:', ALBUM_FILE_PATH);
+        await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), 'utf-8');
+      } else {
+        console.error('Error checking album.json:', err);
+        throw err;
+      }
     }
   } catch (err) {
-    if (err.code !== 'ENOENT') {
-      throw err; // Rethrow if it's not a "file not found" error
-    }
-  }
-
-  // Create DATA_DIR and IMAGE_DIR_PATH
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
-
-  // Ensure album.json exists
-  try {
-    await fs.access(ALBUM_FILE_PATH);
-    // Verify that ALBUM_FILE_PATH is a file, not a directory
-    const albumFileStat = await fs.stat(ALBUM_FILE_PATH);
-    if (!albumFileStat.isFile()) {
-      console.log(`Removing directory at ${ALBUM_FILE_PATH} to create file`);
-      await fs.rm(ALBUM_FILE_PATH, { recursive: true, force: true });
-      await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
-    }
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      console.log("Creating initial album.json at:", ALBUM_FILE_PATH);
-      await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
-    } else {
-      throw err;
-    }
+    console.error('Error ensuring album file structure:', err);
+    throw err;
   }
 }
+
 const loadFtpPassword = async () => {
   try {
     const data = await fs.readFile(passwordFilePath, "utf8");
@@ -764,10 +756,10 @@ ipcMain.handle("exchange-auth-code", async (event, code) => {
 
 ipcMain.handle('save-user', async (_event, user) => {
   try {
-    const dirPath = path.join(__dirname, 'data');
-    const filePath = path.join(dirPath, 'user.json');
-    await fs.mkdir(dirPath, { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(user, null, 2), 'utf-8');
+    const filePath = path.join(app.getPath('userData'), 'data');
+    const USER_FILE_PATH = path.join(filePath, 'user.json');
+    await fs.mkdir(filePath, { recursive: true });
+    await fs.writeFile(USER_FILE_PATH, JSON.stringify(user, null, 2), 'utf-8');
     return { success: true };
   } catch (err) {
     console.error("Error saving user:", err);
@@ -777,8 +769,9 @@ ipcMain.handle('save-user', async (_event, user) => {
 
 ipcMain.handle("load-user", async () => {
   try {
-    const filePath = path.join(__dirname, "data", "user.json");
-    const data = await fs.readFile(filePath, "utf-8");
+    const filePath = path.join(app.getPath('userData'), 'data');
+    const USER_FILE_PATH = path.join(filePath, 'user.json');
+    const data = await fs.readFile(USER_FILE_PATH, "utf-8");
     const user = JSON.parse(data);
     return { success: true, user };
   } catch (error) {
@@ -787,105 +780,85 @@ ipcMain.handle("load-user", async () => {
   }
 });
 
-ipcMain.handle("albums:get", async () => {
-  // logger.info("Fetching albums");
-  try {
-    await ensureAlbumFileStructure();
-
-    const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
-    const albums = JSON.parse(raw);
-    // logger.info("Albums loaded successfully", { count: albums.length, filePath: ALBUM_FILE_PATH });
-    return albums;
-  } catch (err) {
-    logger.error("Error loading albums", { error: err.message, stack: err.stack });
-    return [];
-  }
-});
 
 
+// albums:create handler
 ipcMain.handle("albums:create", async (event, album) => {
   await ensureAlbumFileStructure();
   const { name, date, image } = album;
-  logger.info("Creating new album", { album, ALBUM_FILE_PATH, IMAGE_DIR_PATH });
+  console.log("Creating new album", { album, ALBUM_FILE_PATH, IMAGE_DIR_PATH });
 
   try {
-    const albumDir = path.dirname(ALBUM_FILE_PATH);
-    await fs.mkdir(albumDir, { recursive: true });
-    logger.info("Directory ensured", { path: albumDir });
-    await fs.access(albumDir, fs.constants.W_OK);
-    logger.info("Directory is writable");
-
-    try {
-      await fs.access(ALBUM_FILE_PATH, fs.constants.W_OK);
-      logger.info("Albums file exists and is writable");
-    } catch (err) {
-      logger.info("Albums file doesn't exist, creating empty array");
-      await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]));
-    }
-
-    logger.info("Reading current albums");
+    // Read current albums
     let albums = [];
     try {
       const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
-      if (raw.trim() === "") {
-        logger.info("Albums file is empty, initializing with empty array");
-        albums = [];
-      } else {
-        albums = JSON.parse(raw);
-        logger.info("Current albums before creation", { albums });
-      }
+      albums = raw.trim() === "" ? [] : JSON.parse(raw);
+      console.log("Current albums before creation", { albums });
     } catch (err) {
-      logger.error("Failed to read or parse albums file", { error: err.message, stack: err.stack });
       if (err.code === 'ENOENT') {
-        logger.info("Albums file not found, creating new one");
-        await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]));
+        console.log("Albums file not found, creating new one");
+        await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
       } else {
         throw err;
       }
     }
+
+    // Generate new album ID
     let newId = 1;
     if (albums.length > 0) {
       const lastAlbum = albums[albums.length - 1];
       const lastId = parseInt(lastAlbum.id, 10);
       newId = isNaN(lastId) ? albums.length + 1 : lastId + 1;
     }
+
+    // Handle image saving
     let imagePath = "";
     if (image?.base64 && image?.name) {
       const extension = path.extname(image.name);
       imagePath = path.join(IMAGE_DIR_PATH, `${newId}${extension}`);
-      await fs.mkdir(path.dirname(IMAGE_DIR_PATH), { recursive: true });
+      await fs.mkdir(IMAGE_DIR_PATH, { recursive: true }); // Ensure IMAGE_DIR_PATH exists
       const base64Data = image.base64.replace(/^data:image\/\w+;base64,/, "");
       await fs.writeFile(imagePath, base64Data, "base64");
-      logger.info("Image saved", { path: imagePath });
+      console.log("Image saved", { path: imagePath });
     }
 
+    // Create and save new album
     const newAlbum = { id: newId.toString(), name, date, imagePath };
     albums.push(newAlbum);
-    logger.info("Writing updated albums", { albums });
     await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
-
-    logger.info("Verifying write");
-    const verifyRaw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
-    logger.info("Verified content", { content: verifyRaw });
+    console.log("Album created successfully", { newAlbum });
 
     return newAlbum;
   } catch (error) {
-    logger.error("Failed to create album", { error: error.message, stack: error.stack, album, ALBUM_FILE_PATH });
-    return { success: false, error: error.message, stack: error.stack };
+    console.error("Failed to create album", { error: error.message, stack: error.stack });
+    return { success: false, error: error.message };
+  }
+});
+
+// albums:get, albums:update, albums:delete handlers remain unchanged
+ipcMain.handle("albums:get", async () => {
+  try {
+    await ensureAlbumFileStructure();
+    const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
+    const albums = JSON.parse(raw);
+    return albums;
+  } catch (err) {
+    console.error("Error loading albums", { error: err.message, stack: err.stack });
+    return [];
   }
 });
 
 ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
   await ensureAlbumFileStructure();
-  logger.info("Updating album", { id, name, date, image });
+  console.log("Updating album", { id, name, date, image });
   try {
-    await ensureAlbumFileStructure();
     const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
     const albums = JSON.parse(raw);
 
     const index = albums.findIndex((a) => a.id === id);
     if (index === -1) {
-      logger.error("Album not found", { id });
+      console.error("Album not found", { id });
       throw new Error("Album not found");
     }
 
@@ -893,33 +866,32 @@ ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
     if (image?.base64 && image?.name) {
       const extension = path.extname(image.name);
       imagePath = path.join(IMAGE_DIR_PATH, `${id}${extension}`);
+      await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
       const base64Data = image.base64.replace(/^data:image\/\w+;base64,/, "");
       await fs.writeFile(imagePath, base64Data, "base64");
-      logger.info("Updated image saved", { path: imagePath });
+      console.log("Updated image saved", { path: imagePath });
     }
 
     albums[index] = { id, name, date, imagePath };
     await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
-    logger.info("Album updated successfully", { id, filePath: ALBUM_FILE_PATH });
-
+    console.log("Album updated successfully", { id });
     return albums[index];
   } catch (err) {
-    logger.error("Error updating album", { error: err.message, stack: err.stack });
+    console.error("Error updating album", { error: err.message, stack: err.stack });
     throw err;
   }
 });
 
 ipcMain.handle("albums:delete", async (_, id) => {
   await ensureAlbumFileStructure();
-  logger.info("Deleting album", { id });
+  console.log("Deleting album", { id });
   try {
-    await ensureAlbumFileStructure();
     const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
     let albums = JSON.parse(raw);
     const album = albums.find((a) => a.id === id);
 
     if (!album) {
-      logger.error("Album not found for deletion", { id });
+      console.error("Album not found for deletion", { id });
       return { success: false, error: "Album not found" };
     }
 
@@ -928,18 +900,17 @@ ipcMain.handle("albums:delete", async (_, id) => {
     if (album.imagePath) {
       try {
         await fs.unlink(album.imagePath);
-        logger.info("Image deleted", { path: album.imagePath });
+        console.log("Image deleted", { path: album.imagePath });
       } catch (err) {
-        logger.warn("Failed to delete image, continuing", { path: album.imagePath, error: err.message });
+        console.warn("Failed to delete image, continuing", { path: album.imagePath, error: err.message });
       }
     }
 
     await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
-    logger.info("Album deleted successfully", { id, filePath: ALBUM_FILE_PATH });
-
+    console.log("Album deleted successfully", { id });
     return { success: true };
   } catch (err) {
-    logger.error("Error deleting album", { error: err.message, stack: err.stack });
+    console.error("Error deleting album", { error: err.message, stack: err.stack });
     return { success: false, error: err.message };
   }
 });

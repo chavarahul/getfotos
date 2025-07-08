@@ -117,6 +117,8 @@ const Login = () => {
         }
 
         localStorage.setItem("token", response.data.token);
+        localStorage.setItem("result", saveResult.success ? "true" : "false");
+
         toast.success("Login Successful");
         console.log(response.data.token)
         navigate("/dashboard");
