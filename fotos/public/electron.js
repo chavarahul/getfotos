@@ -62,23 +62,50 @@ const photosFilePath = path.join(__dirname, "photos.json");
 let ftpPassword = DEFAULT_FTP_PASSWORD;
 let photosData = {};
 
+
 const DATA_DIR = path.join(__dirname, "data");
 const ALBUM_FILE_PATH = path.join(DATA_DIR, "album.json");
 const IMAGE_DIR_PATH = path.join(DATA_DIR, "images");
 
 async function ensureAlbumFileStructure() {
   console.log("Ensuring directory structure for:", DATA_DIR);
+
+  // Check if DATA_DIR exists and is a file; if so, remove it
+  try {
+    const dataDirStat = await fs.stat(DATA_DIR);
+    if (dataDirStat.isFile()) {
+      console.log(`Removing file at ${DATA_DIR} to create directory`);
+      await fs.unlink(DATA_DIR);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      throw err; // Rethrow if it's not a "file not found" error
+    }
+  }
+
+  // Create DATA_DIR and IMAGE_DIR_PATH
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
 
+  // Ensure album.json exists
   try {
     await fs.access(ALBUM_FILE_PATH);
-  } catch {
-    console.log("Creating initial album.json at:", ALBUM_FILE_PATH);
-    await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
+    // Verify that ALBUM_FILE_PATH is a file, not a directory
+    const albumFileStat = await fs.stat(ALBUM_FILE_PATH);
+    if (!albumFileStat.isFile()) {
+      console.log(`Removing directory at ${ALBUM_FILE_PATH} to create file`);
+      await fs.rm(ALBUM_FILE_PATH, { recursive: true, force: true });
+      await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
+    }
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.log("Creating initial album.json at:", ALBUM_FILE_PATH);
+      await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
+    } else {
+      throw err;
+    }
   }
 }
-
 const loadFtpPassword = async () => {
   try {
     const data = await fs.readFile(passwordFilePath, "utf8");
@@ -176,6 +203,7 @@ const createWindow = () => {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+       webSecurity: true,
     },
   });
 
@@ -183,7 +211,8 @@ const createWindow = () => {
   //   process.env.NODE_ENV === "development"
   //     ? "http://localhost:3000"
   //     : 
-  const startUrl = `file://${path.join(__dirname, "../dist/index.html")}`;
+
+  const startUrl = `${path.join(__dirname, "../dist/index.html")}`;
 
   mainWindow.loadURL(startUrl);
   mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -761,6 +790,7 @@ ipcMain.handle("load-user", async () => {
 ipcMain.handle("albums:get", async () => {
   // logger.info("Fetching albums");
   try {
+    await ensureAlbumFileStructure();
 
     const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
     const albums = JSON.parse(raw);
@@ -774,6 +804,7 @@ ipcMain.handle("albums:get", async () => {
 
 
 ipcMain.handle("albums:create", async (event, album) => {
+  await ensureAlbumFileStructure();
   const { name, date, image } = album;
   logger.info("Creating new album", { album, ALBUM_FILE_PATH, IMAGE_DIR_PATH });
 
@@ -845,6 +876,7 @@ ipcMain.handle("albums:create", async (event, album) => {
 });
 
 ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
+  await ensureAlbumFileStructure();
   logger.info("Updating album", { id, name, date, image });
   try {
     await ensureAlbumFileStructure();
@@ -878,6 +910,7 @@ ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
 });
 
 ipcMain.handle("albums:delete", async (_, id) => {
+  await ensureAlbumFileStructure();
   logger.info("Deleting album", { id });
   try {
     await ensureAlbumFileStructure();
@@ -1304,7 +1337,7 @@ app.whenReady().then(async () => {
   try {
     await loadFtpPassword();
     await loadPhotosData();
-    await ensureAlbumFileStructure();
+    // await ensureAlbumFileStructure();
     logger.info("Electron app starting");
     createWindow();
     Menu.setApplicationMenu(null);

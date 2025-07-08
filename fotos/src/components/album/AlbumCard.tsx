@@ -111,12 +111,12 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-60" />
 
-          <div className="absolute top-3 right-3 z-10">
+          {/* <div className="absolute top-3 right-3 z-10">
             <Badge className="bg-black/40 text-white border-none px-3 py-1 font-medium text-xs flex items-center gap-1.5">
               <Camera className="w-3 h-3" />
               {album.photoCount || 0} Photo{album.photoCount !== 1 ? "s" : ""}
             </Badge>
-          </div>
+          </div> */}
 
           <AnimatePresence>
             <motion.div
