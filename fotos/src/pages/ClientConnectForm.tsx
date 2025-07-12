@@ -71,13 +71,11 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
       const savedCredentials = localStorage.getItem("ftpCredentials");
       const ftpCleared = localStorage.getItem("ftpCleared") === "true";
 
-      // Check backend status first
       const { isRunning, credentials: backendCredentials } = await window.electronAPI.checkFtpStatus();
-      console.log("FTP server status:", { isRunning, backendCredentials });
+      // console.log("FTP server status:", { isRunning, backendCredentials });
 
-      // If server is running, use backend credentials
       if (isRunning && backendCredentials.length > 0) {
-        const creds = backendCredentials[0]; // Use first available credentials
+        const creds = backendCredentials[0];
         setCredentials(creds);
         localStorage.setItem("ftpCredentials", JSON.stringify(creds));
         localStorage.setItem("ftpCleared", "false");
@@ -126,7 +124,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
     const loadPersistedState = async () => {
       let initialFormValues;
       const savedFormValues = localStorage.getItem("formValues");
-      console.log("Loading form values from localStorage:", savedFormValues);
+      // console.log("Loading form values from localStorage:", savedFormValues);
 
       if (savedFormValues) {
         try {
@@ -249,7 +247,7 @@ const ClientConnectForm: React.FC<ClientConnectFormProps> = ({
           username,
           directory,
           albumId: album,
-          albumName, // User-selected album name
+          albumName,
           token,
         });
 

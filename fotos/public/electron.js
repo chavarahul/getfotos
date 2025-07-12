@@ -24,15 +24,15 @@ process.on("unhandledRejection", (reason, promise) => {
 const GOOGLE_CLIENT_ID = "496438207267-5sm1joa903t9k6ddgv5ulaigq8qvql46.apps.googleusercontent.com";
 const GOOGLE_CLIENT_SECRET = "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";
 
-const REDIRECT_URI ="http://localhost:3000/api/auth/callback/google";
-const SERVER_URL =  "https://backend-google-three.vercel.app";
+const REDIRECT_URI = "http://localhost:3000/api/auth/callback/google";
+const SERVER_URL = "https://backend-google-three.vercel.app";
 const FTP_PORT = 2121;
 const FTP_PASV_RANGE = "8000-9000";
 
 cloudinary.config({
   cloud_name: "your-cloud-name",
   api_key: "your-api-key",
-  api_secret:  "your-api-secret",
+  api_secret: "your-api-secret",
 });
 
 const logger = winston.createLogger({
@@ -71,29 +71,27 @@ async function ensureAlbumFileStructure() {
   console.log('Ensuring directory structure for:', DATA_DIR);
 
   try {
-    // Create DATA_DIR and IMAGE_DIR_PATH
     await fs.mkdir(DATA_DIR, { recursive: true });
     await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
 
-    // Ensure album.json exists and is a file
     try {
       const albumFileStat = await fs.stat(ALBUM_FILE_PATH);
       if (!albumFileStat.isFile()) {
-        console.log(`Removing non-file at ${ALBUM_FILE_PATH} to create file`);
+        logger.info(`Removing non-file at ${ALBUM_FILE_PATH} to create file`);
         await fs.rm(ALBUM_FILE_PATH, { recursive: true, force: true });
         await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), 'utf-8');
       }
     } catch (err) {
       if (err.code === 'ENOENT') {
-        console.log('Creating initial album.json at:', ALBUM_FILE_PATH);
+        logger.info('Creating initial album.json at:', ALBUM_FILE_PATH);
         await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), 'utf-8');
       } else {
-        console.error('Error checking album.json:', err);
+        logger.info('Error checking album.json:', err);
         throw err;
       }
     }
   } catch (err) {
-    console.error('Error ensuring album file structure:', err);
+    logger.info('Error ensuring album file structure:', err);
     throw err;
   }
 }
@@ -195,7 +193,7 @@ const createWindow = () => {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-       webSecurity: true,
+      webSecurity: true,
     },
   });
 
@@ -782,14 +780,12 @@ ipcMain.handle("load-user", async () => {
 
 
 
-// albums:create handler
 ipcMain.handle("albums:create", async (event, album) => {
-  await ensureAlbumFileStructure();
+  // await ensureAlbumFileStructure();
   const { name, date, image } = album;
   console.log("Creating new album", { album, ALBUM_FILE_PATH, IMAGE_DIR_PATH });
 
   try {
-    // Read current albums
     let albums = [];
     try {
       const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
@@ -1308,8 +1304,11 @@ app.whenReady().then(async () => {
   try {
     await loadFtpPassword();
     await loadPhotosData();
-    // await ensureAlbumFileStructure();
+    await ensureAlbumFileStructure();
     logger.info("Electron app starting");
+    console.log("App Ready:", app.isReady());
+    console.log("userData Path:", app.getPath('userData'));
+    console.log("File exists?", await fs.access(ALBUM_FILE_PATH).then(() => true).catch(() => false));
     createWindow();
     Menu.setApplicationMenu(null);
   } catch (error) {
@@ -1362,6 +1361,7 @@ app.on("before-quit", async () => {
   watchers.forEach((watcher) => watcher.close());
   watchers.clear();
 });
+
 
 ipcMain.on("exit-app", () => {
   logger.info("Received exit-app message from renderer, closing app");

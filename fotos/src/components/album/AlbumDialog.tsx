@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -61,8 +61,14 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
     base64: string;
   } | null;
 
-  const createOrUpdateAlbum = async () => {
+  const createOrUpdateAlbum = async (e:FormEvent) => {
+    e.preventDefault();
     let image: AlbumImage = null;
+    if (!ipc) {
+      console.error("Electron IPC not available");
+      throw new Error("IPC not available. Ensure Electron context is properly set up.");
+    }
+    console.log('Creating or updating album with data:', { name, date, coverImage });
 
     try {
       if (coverImage) {
@@ -87,7 +93,12 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
           ...payload
         });
       }
-      const res =  await ipc.createAlbum(payload);
+
+      console.log('Creating new album with payload:', payload);
+      const res = await ipc.createAlbum(payload);
+      // if (!res.success) {
+      //   throw new Error(res.error || "Failed to create album");
+      // }
       console.log(res);
       return res
 
