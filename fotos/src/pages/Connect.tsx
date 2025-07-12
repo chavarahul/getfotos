@@ -1,11 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { PageLoader, ErrorDisplay } from "../components/common/loaders";
 import ClientConnectForm from "./ClientConnectForm";
-import type { Camera } from "../constants/type";
+import type { Camera, Album } from "../constants/type";
 import { ScrollArea } from "../components/ui/scroll-area";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../components/ui/button";
 import { debounce } from "lodash";
 
@@ -21,14 +20,19 @@ const fetchUser = async () => {
   return res.user;
 };
 
-const fetchAlbums = async () => {
+const fetchAlbums = async (): Promise<Album[]> => {
   const albums = await window.electronAPI.getAlbums();
-  return albums; 
+  return albums;
 };
 
 const Connect: React.FC = () => {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const [user, setUser] = useState<any | null>(null);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [isUserLoading, setIsUserLoading] = useState(true);
+  const [isAlbumsLoading, setIsAlbumsLoading] = useState(true);
+  const [userError, setUserError] = useState<string | null>(null);
+  const [albumsError, setAlbumsError] = useState<string | null>(null);
   const token = localStorage.getItem("token");
 
   useEffect(() => {
@@ -37,31 +41,47 @@ const Connect: React.FC = () => {
     }
   }, [token, navigate]);
 
-  const {
-    data: user,
-    isLoading: isUserLoading,
-    error: userError,
-    refetch: refetchUser,
-  } = useQuery({
-    queryKey: ["user"],
-    queryFn: fetchUser,
-    enabled: !!token,
-  });
+  const loadUser = async () => {
+    setIsUserLoading(true);
+    try {
+      const userData = await fetchUser();
+      setUser(userData);
+      setUserError(null);
+    } catch (err) {
+      setUserError((err as any)?.message || "Failed to load user");
+    } finally {
+      setIsUserLoading(false);
+    }
+  };
 
-  const {
-    data: albums = [],
-    isLoading: isAlbumsLoading,
-    error: albumsError,
-    refetch: refetchAlbums,
-  } = useQuery({
-    queryKey: ["albums"],
-    queryFn: fetchAlbums,
-    enabled: !!user,
-  });
+  const loadAlbums = async () => {
+    setIsAlbumsLoading(true);
+    try {
+      const albumData = await fetchAlbums();
+      setAlbums(albumData);
+      setAlbumsError(null);
+    } catch (err) {
+      setAlbumsError((err as any)?.message || "Failed to load albums");
+    } finally {
+      setIsAlbumsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      loadUser();
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (user) {
+      loadAlbums();
+    }
+  }, [user]);
 
   useEffect(() => {
     const handleAlbumRefresh = debounce(() => {
-      queryClient.invalidateQueries({ queryKey: ["albums"] });
+      loadAlbums();
     }, 300);
 
     window.addEventListener("albumRefresh", handleAlbumRefresh);
@@ -69,22 +89,18 @@ const Connect: React.FC = () => {
       window.removeEventListener("albumRefresh", handleAlbumRefresh);
       handleAlbumRefresh.cancel();
     };
-  }, [queryClient]);
+  }, []);
 
   if (userError || albumsError) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <ErrorDisplay
-          message={
-            userError?.message ||
-            albumsError?.message ||
-            "Failed to load user or albums data"
-          }
+          message={userError || albumsError || "Failed to load user or albums data"}
         />
         <Button
           onClick={() => {
-            refetchUser();
-            refetchAlbums();
+            loadUser();
+            loadAlbums();
           }}
           className="mt-4 bg-black text-white hover:bg-gray-800"
         >

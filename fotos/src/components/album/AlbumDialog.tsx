@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Album } from "../../constants/type";
 
 interface AlbumFormDialogProps {
@@ -18,7 +17,6 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const queryClient = useQueryClient();
 
   const isEditMode = !!albumToEdit;
 
@@ -61,8 +59,7 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
     base64: string;
   } | null;
 
-  const createOrUpdateAlbum = async (e:FormEvent) => {
-    e.preventDefault();
+  const createOrUpdateAlbum = async () => {
     let image: AlbumImage = null;
     if (!ipc) {
       console.error("Electron IPC not available");
@@ -72,36 +69,49 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
 
     try {
       if (coverImage) {
+        console.log('Processing coverImage...');
         const base64 = await new Promise<string>((resolve, reject) => {
+          console.log('Starting FileReader for coverImage');
           const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(reader.error);
+          reader.onload = () => {
+            console.log('FileReader onload triggered');
+            resolve(reader.result as string);
+          };
+          reader.onerror = () => {
+            console.error('FileReader error:', reader.error);
+            reject(reader.error);
+          };
           reader.readAsDataURL(coverImage);
         });
-
+        console.log('FileReader completed, creating image object');
         image = {
           name: coverImage.name,
           base64
         };
+      } else {
+        console.log('No coverImage provided');
       }
 
       const payload = { name, date, image };
+      console.log('Payload prepared:', payload);
 
+      let res;
       if (isEditMode && albumToEdit?.id) {
-        return await ipc.updateAlbum({
+        console.log('Updating album with ID:', albumToEdit.id);
+        res = await ipc.updateAlbum({
           id: albumToEdit.id,
           ...payload
         });
+        console.log('Update album response:', res);
+      } else {
+        console.log('Creating new album with payload:', payload);
+        res = await ipc.createAlbum(payload);
+        console.log('Create album response:', res);
       }
 
-      console.log('Creating new album with payload:', payload);
-      const res = await ipc.createAlbum(payload);
-      // if (!res.success) {
-      //   throw new Error(res.error || "Failed to create album");
-      // }
-      console.log(res);
-      return res
-
+      toast.success(`Album ${isEditMode ? "updated" : "created"} successfully`);
+      setOpen(false);
+      return res;
     } catch (error) {
       console.error('Album operation failed:', error);
       throw new Error(
@@ -112,27 +122,29 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
     }
   };
 
-  const mutation = useMutation({
-    mutationFn: createOrUpdateAlbum,
-    onMutate: () => setIsSubmitting(true),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["albums"] });
-      toast.success(`Album ${isEditMode ? "updated" : "created"} successfully`);
-      setOpen(false);
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to save album");
-    },
-    onSettled: () => setIsSubmitting(false),
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return toast.error("Album name required");
-    if (!date || isNaN(new Date(date).getTime())) return toast.error("Invalid date");
+    console.log('handleSubmit called with:', { name, date, coverImage });
+    if (!name.trim()) {
+      console.log('Validation failed: Empty album name');
+      toast.error("Album name required");
+      return;
+    }
+    if (!date || isNaN(new Date(date).getTime())) {
+      console.log('Validation failed: Invalid date');
+      toast.error("Invalid date");
+      return;
+    }
 
+    console.log('Submitting...');
     setIsSubmitting(true);
-    mutation.mutate();
+    try {
+      await createOrUpdateAlbum();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save album");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const modalContent = (

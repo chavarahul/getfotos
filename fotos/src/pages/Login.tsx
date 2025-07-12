@@ -1,140 +1,176 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BGonboarding from "/assets/bg-onboarding.png";
 import OnBoardingSVG from "/assets/onboarding.svg";
 import Logo from "/assets/monotype-white.svg";
 import { Link } from "react-router-dom";
 import axiosInstance from "../utils/api";
-import debounce from "lodash.debounce";
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useAuth } from "@/hooks/useAuth";
+import { Eye, EyeOff } from 'lucide-react';
 
-interface User {
-  id: string;
-  name: string;
+interface FormData {
+  firstName: string;
+  lastName: string;
   email: string;
-}
-
-interface ElectronAPI {
-  saveCollections: (collections: any) => Promise<{ success: boolean; error?: string }>;
-  loadCollections: () => Promise<any[]>;
-  saveData: (type: string, data: any) => Promise<{ success: boolean; error?: string }>;
-  loadData: (type: string) => Promise<any[]>;
-  googleLogin: () => Promise<string>;
-  exchangeAuthCode: (code: string) => Promise<{ id_token: string }>;
-  nodeVersion: (msg: string) => Promise<string>;
-  selectFolder: () => Promise<string | null>;
-  ping: () => Promise<string>;
-}
-
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
-  }
+  otp: string;
+  password: string;
+  confirmPassword: string;
+  phone: string;
+  phoneOtp: string;
 }
 
 const Login = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [error, setError] = useState<string>("");
-  const [isElectron, setIsElectron] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [step, setStep] = useState<'login' | 'register1' | 'register2'>('login');
+  const [formData, setFormData] = useState<FormData>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    otp: '',
+    password: '',
+    confirmPassword: '',
+    phone: '',
+    phoneOtp: ''
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showOtp, setShowOtp] = useState(false);
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, login } = useAuth();
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setError('');
+  };
 
-  useEffect(() => {
-    if (isAuthenticated) navigate("/dashboard");
-  }, [isAuthenticated, navigate]);
+  const validateEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
 
-  useEffect(() => {
-    const checkElectron = async () => {
-      if (window.electronAPI) {
-        try {
-          const response = await window.electronAPI.ping();
-          console.log("Ping response:", response);
-          setIsElectron(response === "pong");
-        } catch (err) {
-          console.log("Not running in Electron:", err);
-          setIsElectron(false);
-        }
-      } else {
-        console.log("window.electronAPI not available");
-        setIsElectron(false);
-      }
-    };
+  const handleVerifyEmail = async () => {
+    if (!formData.firstName || !formData.lastName || !formData.email) {
+      setError('Please fill in all fields');
+      return;
+    }
+    if (!validateEmail(formData.email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
 
-    checkElectron();
-  }, [navigate]);
+    try {
+      setIsLoading(true);
+      await axiosInstance.post('/api/auth/send-email-otp', {
+        email: formData.email
+      });
+      setShowOtp(true);
+      toast.success('OTP sent to your email');
+    } catch (err) {
+      setError('Failed to send OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const handleGoogleLogin = useCallback(
-    debounce(async () => {
-      if (isLoading) {
-        console.log("Login already in progress, ignoring request");
-        return;
-      }
+  const handleRegisterStep1 = async () => {
+    if (!formData.otp) {
+      setError('Please enter OTP');
+      return;
+    }
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long');
+      return;
+    }
 
-      try {
-        setError("");
-        setIsLoading(true);
+    try {
+      setIsLoading(true);
+      await axiosInstance.post('/api/auth/verify-email-otp', {
+        email: formData.email,
+        otp: formData.otp,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        password: formData.password
+      });
+      setStep('register2');
+      toast.success('Email verified successfully');
+    } catch (err) {
+      setError('Invalid OTP or registration failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-        if (!isElectron || !window.electronAPI) {
-          throw new Error("This feature is only available in the desktop app");
-        }
+  const handleVerifyPhone = async () => {
+    if (!formData.phone) {
+      setError('Please enter phone number');
+      return;
+    }
+    try {
+      setIsLoading(true);
+      await axiosInstance.post('/api/auth/send-phone-otp', {
+        phone: formData.phone
+      });
+      setShowOtp(true);
+      toast.success('OTP sent to your phone');
+    } catch (err) {
+      setError('Failed to send OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-        console.log("Step 1: Initiating Google OAuth flow");
-        const code = await window.electronAPI.googleLogin();
-        console.log("Authorization code received:", code ? code.slice(0, 10) + "..." : "null");
-        if (!code) {
-          throw new Error("No authorization code received");
-        }
+  const handleRegisterStep2 = async () => {
+    if (!formData.phoneOtp) {
+      setError('Please enter OTP');
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const response = await axiosInstance.post('/api/auth/verify-phone-otp', {
+        email: formData.email,
+        phone: formData.phone,
+        phoneOtp: formData.phoneOtp
+      });
+      localStorage.setItem('token', response.data.token);
+      login();
+      toast.success('Registration Successful');
+      navigate('/dashboard');
+    } catch (err) {
+      setError('Invalid OTP or registration failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-        const { id_token } = await window.electronAPI.exchangeAuthCode(code);
-        console.log("ID token received:", id_token ? id_token.slice(0, 10) + "..." : "null");
-        if (!id_token) {
-          throw new Error("No ID token received");
-        }
-
-        const response = await axiosInstance.post("/api/auth/google", {
-          token: id_token,
-        });
-        console.log("Backend response:", response.data);
-
-        const userData: User = response.data.user;
-        setUser(userData);
-
-        if (!response.data.token) {
-          throw new Error("No token received from backend");
-        }
-
-        const saveResult = await window.electronAPI.saveUser(userData);
-        if (!saveResult.success) {
-          console.error("Failed to save user locally:", saveResult.error);
-        } else {
-          console.log("User data saved locally via Electron IPC.");
-        }
-
-        localStorage.setItem("token", response.data.token);
-        localStorage.setItem("result", saveResult.success ? "true" : "false");
-
-        toast.success("Login Successful");
-        console.log(response.data.token)
-        navigate("/dashboard");
-      } catch (err) {
-        console.error("Error during Google sign-in:", err);
-        const errorMessage =
-          err instanceof Error
-            ? err.message
-            : "Failed to sign in with Google. Please try again.";
-        setError(errorMessage);
-      } finally {
-        setIsLoading(false);
-      }
-    }, 1000, { leading: true, trailing: false }),
-    [isElectron, isLoading, navigate]
-  );
+  const handleLogin = async () => {
+    if (!formData.email || !formData.password) {
+      setError('Please fill in all fields');
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const response = await axiosInstance.post('/api/auth/login', {
+        email: formData.email,
+        password: formData.password
+      });
+      localStorage.setItem('token', response.data.token);
+      login();
+      toast.success('Login Successful');
+      navigate('/dashboard');
+    } catch (err) {
+      setError('Invalid email or password');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="flex w-full h-screen overflow-hidden font-sans">
@@ -145,15 +181,191 @@ const Login = () => {
           </div>
           <div className="text-gray-600 mb-8">Glad to see you back</div>
           {error && <div className="text-red-500 text-sm mb-4">{error}</div>}
-          <Button
-            className="cursor-pointer border w-full bg-black text-white font-semibold font-['Montserrat'] hover:bg-black/85 rounded-[6px] py-2"
-            onClick={handleGoogleLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? "Signing in..." : "Sign in with Google"}
-          </Button>
+          
+          {step === 'login' && (
+            <div className="space-y-4">
+              <input
+                type="email"
+                name="email"
+                placeholder="Email"
+                value={formData.email}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded"
+              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  placeholder="Password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+              <Button
+                className="w-full bg-black text-white hover:bg-black/85 rounded-[6px] py-2"
+                onClick={handleLogin}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Signing in...' : 'Sign In'}
+              </Button>
+              <div className="text-center">
+                <button
+                  onClick={() => setStep('register1')}
+                  className="text-blue-600 text-sm"
+                >
+                  Create an account
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 'register1' && (
+            <div className="space-y-4">
+              <input
+                type="text"
+                name="firstName"
+                placeholder="First Name"
+                value={formData.firstName}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded"
+              />
+              <input
+                type="text"
+                name="lastName
+
+"                placeholder="Last Name"
+                value={formData.lastName}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded"
+              />
+              <input
+                type="email"
+                name="email"
+                placeholder="Email"
+                value={formData.email}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded"
+              />
+              <Button
+                className="w-full bg-black text-white hover:bg-black/85 rounded-[6px] py-2"
+                onClick={handleVerifyEmail}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Verifying...' : 'Verify Email'}
+              </Button>
+              {showOtp && (
+                <>
+                  <input
+                    type="text"
+                    name="otp"
+                    placeholder="Enter OTP"
+                    value={formData.otp}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border rounded"
+                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      placeholder="Password"
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick---+() => setShowPassword(!showPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2"
+                    >
+                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      name="confirmPassword"
+                      placeholder="Confirm Password"
+                      value={formData.confirmPassword}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2"
+                    >
+                      {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
+                  <Button
+                    className="w-full bg-black text-white hover:bg-black/85 rounded-[6px] py-2"
+                    onClick={handleRegisterStep1}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Submitting...' : 'Submit'}
+                  </Button>
+                </>
+              )}
+              <div className="text-center">
+                <button
+                  onClick={() => setStep('login')}
+                  className="text-blue-600 text-sm"
+                >
+                  Already have an account? Sign in
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 'register2' && (
+            <div className="space-y-4">
+              <input
+                type="tel"
+                name="phone"
+                placeholder="Phone Number"
+                value={formData.phone}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded"
+              />
+              <Button
+                className="w-full bg-black text-white hover:bg-black/85 rounded-[6px] py-2"
+                onClick={handleVerifyPhone}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Verifying...' : 'Verify Phone'}
+              </Button>
+              {showOtp && (
+                <>
+                  <input
+                    type="text"
+                    name="phoneOtp"
+                    placeholder="Enter Phone OTP"
+                    value={formData.phoneOtp}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border rounded"
+                  />
+                  <Button
+                    className="w-full bg-black text-white hover:bg-black/85 rounded-[6px] py-2"
+                    onClick={handleRegisterStep2}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Submitting...' : 'Complete Registration'}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="text-xs text-gray-600 mt-5">
-            by continuing you agree to our{' '}
+            By continuing you agree to our{' '}
             <Link to="#" className="text-blue-600">terms and conditions</Link> and{' '}
             <Link to="#" className="text-blue-600">privacy policy</Link>
           </div>
@@ -161,7 +373,7 @@ const Login = () => {
         <div className="text-xs text-gray-600 mt-5">
           For help, consult our{' '}
           <Link to="#" className="text-blue-600">documentation</Link> or contact{' '}
-          <Link to="#" className="text-blue-600">support</Link>. The docs offer step-by-step guidance on common issues. If needed, reach out to our support team via email, chat, or phone. Prompt assistance ensures a smooth experience with our product or service.
+          <Link to="#" className="text-blue-600">support</Link>. The docs offer step-by-step guidance on common issues. If needed, reach out to our support team via email, chat, drifting phone. Prompt assistance ensures a smooth experience with our product or service.
         </div>
       </div>
       <div className="w-1/2 bg-black text-white flex flex-col justify-center items-center relative">

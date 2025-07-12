@@ -1,8 +1,8 @@
+import { useEffect, useState } from "react";
 import AlbumHeader from "../components/album/AlbumHeader";
 import AlbumCard from "../components/album/AlbumCard";
 import { PageLoader, ErrorDisplay } from "../components/common/loaders";
 import type { Album } from "../constants/type";
-import { useQuery } from "@tanstack/react-query";
 
 const fetchAlbums = async (): Promise<Album[]> => {
   const result = await window.electronAPI.getAlbums();
@@ -10,13 +10,28 @@ const fetchAlbums = async (): Promise<Album[]> => {
 };
 
 const Dashboard: React.FC = () => {
-  const { data: albums = [], isLoading, error } = useQuery({
-    queryKey: ["albums"],
-    queryFn: fetchAlbums,
-    staleTime: 1000 * 5,
-    refetchInterval: 1000 * 5,
-    retry: 1,
-  });
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadAlbums = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchAlbums();
+        setAlbums(data);
+      } catch (err) {
+        setError((err as any)?.message || "Failed to fetch albums");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAlbums();
+
+    const interval = setInterval(loadAlbums, 1000 * 5);
+    return () => clearInterval(interval);
+  }, []);
 
   if (isLoading && !albums.length) {
     return (
@@ -27,9 +42,7 @@ const Dashboard: React.FC = () => {
   }
 
   if (error) {
-    return (
-      <ErrorDisplay message={(error as any)?.message || "Failed to fetch albums"} />
-    );
+    return <ErrorDisplay message={error} />;
   }
 
   return (

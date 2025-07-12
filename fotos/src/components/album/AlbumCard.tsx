@@ -12,12 +12,10 @@ import {
   Trash2,
   Image,
   Calendar,
-  Camera,
   GalleryVertical,
 } from "lucide-react";
 import { ButtonLoader } from "../common/loaders";
 import type { Album } from "../../constants/type";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface AlbumCardProps {
   album: Album;
@@ -25,8 +23,8 @@ interface AlbumCardProps {
 
 const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
   const [isImageLoading, setIsImageLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
   const token = localStorage.getItem("token");
   if (!token) {
@@ -34,19 +32,18 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
     return null;
   }
 
-  const deleteAlbumMutation = useMutation({
-    mutationFn: async (id: string) => {
+  const deleteAlbum = async (id: string) => {
+    setIsDeleting(true);
+    try {
       const res = await window.electronAPI.deleteAlbum(id);
       if (!res.success) throw new Error("Failed to delete album");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["albums"] });
       toast.success("Album deleted successfully.");
-    },
-    onError: (err: any) => {
+    } catch (err: any) {
       toast.error(err?.message || "Failed to delete album.");
-    },
-  });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const formattedDate = new Date(album.date).toLocaleDateString("en-US", {
     year: "numeric",
@@ -111,13 +108,6 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-60" />
 
-          {/* <div className="absolute top-3 right-3 z-10">
-            <Badge className="bg-black/40 text-white border-none px-3 py-1 font-medium text-xs flex items-center gap-1.5">
-              <Camera className="w-3 h-3" />
-              {album.photoCount || 0} Photo{album.photoCount !== 1 ? "s" : ""}
-            </Badge>
-          </div> */}
-
           <AnimatePresence>
             <motion.div
               initial={{ opacity: 0, scale: 0.8 }}
@@ -171,11 +161,11 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => deleteAlbumMutation.mutate(album.id)}
-                  disabled={deleteAlbumMutation.isPending}
+                  onClick={() => deleteAlbum(album.id)}
+                  disabled={isDeleting}
                   className="border-gray-200 hover:border-red-200 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-[6px] h-10 w-10"
                 >
-                  {deleteAlbumMutation.isPending ? (
+                  {isDeleting ? (
                     <ButtonLoader className="border-red-600" />
                   ) : (
                     <Trash2 className="w-4 h-4" />
