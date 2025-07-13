@@ -77,7 +77,6 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="w-full overflow-x-hidden">
-      {/* Desktop Sidebar */}
       <div className="hidden md:block fixed top-0 left-0 bottom-0 bg-white text-black h-screen w-[220px] lg:w-[280px] z-40 border-r border-white/10">
         <div className="flex flex-col h-full justify-between">
           <div>

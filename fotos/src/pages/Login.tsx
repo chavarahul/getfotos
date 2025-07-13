@@ -9,8 +9,19 @@ import { Link } from "react-router-dom";
 import axiosInstance from "../utils/api";
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { useAuth } from "@/hooks/useAuth";
 import { Eye, EyeOff } from 'lucide-react';
+
+interface ElectronAPI {
+  saveUser: (user: any) => Promise<{ success: boolean; error?: string }>;
+  loadUser: () => Promise<{ success: boolean; user?: any; error?: string }>;
+  ping: () => Promise<string>;
+}
+
+declare global {
+  interface Window {
+    electronAPI?: ElectronAPI;
+  }
+}
 
 interface FormData {
   firstName: string;
@@ -21,6 +32,8 @@ interface FormData {
   confirmPassword: string;
   phone: string;
   phoneOtp: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
 }
 
 const Login = () => {
@@ -33,7 +46,9 @@ const Login = () => {
     password: '',
     confirmPassword: '',
     phone: '',
-    phoneOtp: ''
+    phoneOtp: '',
+    emailVerified: false,
+    phoneVerified: false
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -41,15 +56,18 @@ const Login = () => {
   const [error, setError] = useState('');
   const [showOtp, setShowOtp] = useState(false);
   const navigate = useNavigate();
-  const { isAuthenticated, login } = useAuth();
+
+  const validateEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
+  const validatePhone = (phone: string) => {
+    return /^\+?[\d\s-]{10,}$/.test(phone);
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError('');
-  };
-
-  const validateEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   };
 
   const handleVerifyEmail = async () => {
@@ -64,13 +82,11 @@ const Login = () => {
 
     try {
       setIsLoading(true);
-      await axiosInstance.post('/api/auth/send-email-otp', {
-        email: formData.email
-      });
+      await axiosInstance.post('/api/auth/send-email-otp', { email: formData.email });
       setShowOtp(true);
       toast.success('OTP sent to your email');
     } catch (err) {
-      setError('Failed to send OTP. Please try again.');
+      setError(err.response?.data?.error || 'Failed to send OTP');
     } finally {
       setIsLoading(false);
     }
@@ -94,15 +110,14 @@ const Login = () => {
       setIsLoading(true);
       await axiosInstance.post('/api/auth/verify-email-otp', {
         email: formData.email,
-        otp: formData.otp,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        password: formData.password
+        otp: formData.otp
       });
+      setFormData({ ...formData, emailVerified: true });
       setStep('register2');
+      setShowOtp(false);
       toast.success('Email verified successfully');
     } catch (err) {
-      setError('Invalid OTP or registration failed');
+      setError(err.response?.data?.error || 'Invalid OTP or verification failed');
     } finally {
       setIsLoading(false);
     }
@@ -113,15 +128,17 @@ const Login = () => {
       setError('Please enter phone number');
       return;
     }
+    if (!validatePhone(formData.phone)) {
+      setError('Please enter a valid phone number');
+      return;
+    }
     try {
       setIsLoading(true);
-      await axiosInstance.post('/api/auth/send-phone-otp', {
-        phone: formData.phone
-      });
+      console.log('Simulated phone OTP sent for:', formData.phone);
       setShowOtp(true);
-      toast.success('OTP sent to your phone');
+      toast.success('OTP sent to your phone (Use 654321 for testing)');
     } catch (err) {
-      setError('Failed to send OTP. Please try again.');
+      setError('Failed to process phone verification');
     } finally {
       setIsLoading(false);
     }
@@ -132,19 +149,44 @@ const Login = () => {
       setError('Please enter OTP');
       return;
     }
+    if (formData.phoneOtp !== '654321') {
+      setError('Invalid OTP');
+      return;
+    }
+
     try {
       setIsLoading(true);
-      const response = await axiosInstance.post('/api/auth/verify-phone-otp', {
+      const userData = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
         email: formData.email,
+        password: formData.password,
         phone: formData.phone,
-        phoneOtp: formData.phoneOtp
-      });
+        emailVerified: formData.emailVerified,
+        phoneVerified: true
+      };
+
+      const response = await axiosInstance.post('/api/auth/register', userData);
+
+      if (window.electronAPI) {
+        const saveResult = await window.electronAPI.saveUser({
+          id: response.data.user.id,
+          name: response.data.user.name,
+          email: response.data.user.email,
+          phone: response.data.user.phone,
+          emailVerified: !!response.data.user.emailVerified,
+          phoneVerified: !!response.data.user.phoneVerified
+        });
+        if (!saveResult.success) {
+          console.error('Failed to save user data locally:', saveResult.error);
+        }
+      }
+
       localStorage.setItem('token', response.data.token);
-      login();
       toast.success('Registration Successful');
       navigate('/dashboard');
     } catch (err) {
-      setError('Invalid OTP or registration failed');
+      setError(err.response?.data?.error || 'Registration failed');
     } finally {
       setIsLoading(false);
     }
@@ -161,12 +203,26 @@ const Login = () => {
         email: formData.email,
         password: formData.password
       });
+
+      if (window.electronAPI) {
+        const saveResult = await window.electronAPI.saveUser({
+          id: response.data.user.id,
+          name: response.data.user.name,
+          email: response.data.user.email,
+          phone: response.data.user.phone,
+          emailVerified: !!response.data.user.emailVerified,
+          phoneVerified: !!response.data.user.phoneVerified
+        });
+        if (!saveResult.success) {
+          console.error('Failed to save user data locally:', saveResult.error);
+        }
+      }
+
       localStorage.setItem('token', response.data.token);
-      login();
       toast.success('Login Successful');
       navigate('/dashboard');
     } catch (err) {
-      setError('Invalid email or password');
+      setError(err.response?.data?.error || 'Invalid email or password');
     } finally {
       setIsLoading(false);
     }
@@ -239,9 +295,8 @@ const Login = () => {
               />
               <input
                 type="text"
-                name="lastName
-
-"                placeholder="Last Name"
+                name="lastName"
+                placeholder="Last Name"
                 value={formData.lastName}
                 onChange={handleInputChange}
                 className="w-full p-2 border rounded"
@@ -282,7 +337,7 @@ const Login = () => {
                     />
                     <button
                       type="button"
-                      onClick---+() => setShowPassword(!showPassword)}
+                      onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-2 top-1/2 -translate-y-1/2"
                     >
                       {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -373,7 +428,7 @@ const Login = () => {
         <div className="text-xs text-gray-600 mt-5">
           For help, consult our{' '}
           <Link to="#" className="text-blue-600">documentation</Link> or contact{' '}
-          <Link to="#" className="text-blue-600">support</Link>. The docs offer step-by-step guidance on common issues. If needed, reach out to our support team via email, chat, drifting phone. Prompt assistance ensures a smooth experience with our product or service.
+          <Link to="#" className="text-blue-600">support</Link>. The docs offer step-by-step guidance on common issues. If needed, reach out to our support team via email, chat, or phone. Prompt assistance ensures a smooth experience with our product or service.
         </div>
       </div>
       <div className="w-1/2 bg-black text-white flex flex-col justify-center items-center relative">

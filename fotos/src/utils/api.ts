@@ -1,7 +1,9 @@
 import axios from "axios";
 
 const axiosInstance = axios.create({
-  baseURL: "https://backend-google-three.vercel.app",
+  // baseURL: "https://backend-google-three.vercel.app",
+  baseURL: " http://localhost:4000",
+
 });
 
 axiosInstance.interceptors.request.use((config) => {

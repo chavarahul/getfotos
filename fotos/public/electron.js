@@ -30,9 +30,9 @@ const FTP_PORT = 2121;
 const FTP_PASV_RANGE = "8000-9000";
 
 cloudinary.config({
-  cloud_name: "your-cloud-name",
-  api_key: "your-api-key",
-  api_secret: "your-api-secret",
+  cloud_name: "dxfujspwu",
+  api_key: "575875917966656",
+  api_secret: "_MvreXnhQZ_1FyRyL75Fnuyt6u0",
 });
 
 const logger = winston.createLogger({
