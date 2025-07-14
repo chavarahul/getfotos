@@ -72,7 +72,6 @@ const ConfirmationModal: React.FC<{
   );
 };
 
-// Image Preview Modal Component
 const ImagePreviewModal: React.FC<{
   isOpen: boolean;
   photo: Photo | null;

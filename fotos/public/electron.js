@@ -57,14 +57,15 @@ const watchers = new Map();
 const DEFAULT_FTP_PASSWORD = "xy12z";
 
 const passwordFilePath = path.join(app.getPath("userData"), "ftpPassword.json");
-const photosFilePath = path.join(__dirname, "photos.json");
 
 let ftpPassword = DEFAULT_FTP_PASSWORD;
 let photosData = {};
 
 
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
+const photosFilePath = path.join(DATA_DIR, "photos.json");
 const ALBUM_FILE_PATH = path.join(DATA_DIR, 'album.json');
+const SYNC_FILE_PATH = path.join(DATA_DIR, "syncQueue.json");
 const IMAGE_DIR_PATH = path.join(DATA_DIR, 'images');
 
 async function ensureAlbumFileStructure() {
@@ -421,18 +422,6 @@ async function startFtpServer(username, directory, albumId, albumName, token, po
       mainWindow.webContents.send("image-stream", { action: "pending", filePath });
       logger.info("Notified frontend of pending file", { filePath });
 
-      try {
-        await fs.access(filePath, fs.constants.R_OK);
-        logger.info("File accessible", { filePath });
-      } catch (error) {
-        logger.error("File not accessible", { filePath, error: error.message });
-        mainWindow.webContents.send("image-stream", {
-          action: "error",
-          error: `File not accessible: ${fileName}`,
-        });
-        return;
-      }
-
       const isImage = await isImageFile(filePath);
       if (!isImage) {
         logger.error("File is not a recognized image", { filePath });
@@ -447,27 +436,19 @@ async function startFtpServer(username, directory, albumId, albumName, token, po
       const photoId = uuidv4();
       const createdAt = new Date().toISOString();
       logger.info("Processing photo for storage", { fileName, albumName, photoId, fileUrl });
-
-      if (!albumName || fileUrl.length > 255) {
-        logger.error("Invalid storage input", {
-          albumName,
-          fileUrlLength: fileUrl.length,
-        });
-        mainWindow.webContents.send("image-stream", {
-          action: "error",
-          error: `Invalid data for ${fileName}`,
-        });
-        return;
-      }
-
       try {
         await loadPhotosData();
         if (!photosData[albumName]) {
           photosData[albumName] = [];
         }
+        const userDataDir = path.join(app.getPath('userData'), 'data');
+        const USER_FILE_PATH = path.join(userDataDir, 'user.json');
+        const data = await fs.readFile(USER_FILE_PATH, "utf-8");
+        const user = JSON.parse(data);
         const newPhoto = {
           id: photoId,
           albumName,
+          userId: user.id,
           imageUrl: fileUrl,
           createdAt,
         };
@@ -493,6 +474,18 @@ async function startFtpServer(username, directory, albumId, albumName, token, po
         });
         return;
       }
+      if (!albumName || fileUrl.length > 255) {
+        logger.error("Invalid storage input", {
+          albumName,
+          fileUrlLength: fileUrl.length,
+        });
+        mainWindow.webContents.send("image-stream", {
+          action: "error",
+          error: `Invalid data for ${fileName}`,
+        });
+        return;
+      }
+
 
       mainWindow.webContents.send("image-stream", {
         action: "add",
@@ -779,9 +772,29 @@ ipcMain.handle("load-user", async () => {
 });
 
 
+async function appendToSyncQueue(entry) {
+  try {
+    let queue = [];
+    try {
+      const raw = await fs.readFile(SYNC_FILE_PATH, "utf-8");
+      queue = raw.trim() ? JSON.parse(raw) : [];
+    } catch (_) { }
+    queue.push(entry);
+    await fs.writeFile(SYNC_FILE_PATH, JSON.stringify(queue, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Failed to append to sync queue", err);
+  }
+}
+
+async function userData() {
+  const filePath = path.join(app.getPath('userData'), 'data');
+  const USER_FILE_PATH = path.join(filePath, 'user.json');
+  const data = await fs.readFile(USER_FILE_PATH, "utf-8");
+  const user = JSON.parse(data);
+  return user;
+}
 
 ipcMain.handle("albums:create", async (event, album) => {
-  // await ensureAlbumFileStructure();
   const { name, date, image } = album;
   console.log("Creating new album", { album, ALBUM_FILE_PATH, IMAGE_DIR_PATH });
 
@@ -800,7 +813,6 @@ ipcMain.handle("albums:create", async (event, album) => {
       }
     }
 
-    // Generate new album ID
     let newId = 1;
     if (albums.length > 0) {
       const lastAlbum = albums[albums.length - 1];
@@ -808,23 +820,31 @@ ipcMain.handle("albums:create", async (event, album) => {
       newId = isNaN(lastId) ? albums.length + 1 : lastId + 1;
     }
 
-    // Handle image saving
     let imagePath = "";
     if (image?.base64 && image?.name) {
       const extension = path.extname(image.name);
       imagePath = path.join(IMAGE_DIR_PATH, `${newId}${extension}`);
-      await fs.mkdir(IMAGE_DIR_PATH, { recursive: true }); // Ensure IMAGE_DIR_PATH exists
+      await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
       const base64Data = image.base64.replace(/^data:image\/\w+;base64,/, "");
       await fs.writeFile(imagePath, base64Data, "base64");
       console.log("Image saved", { path: imagePath });
     }
 
-    // Create and save new album
-    const newAlbum = { id: newId.toString(), name, date, imagePath };
+
+    const user = await userData();
+    if (!user) {
+      console.error("User data not found, cannot update album");
+    }
+
+    const newAlbum = { id: newId.toString(), userId: user.id, name, date, imagePath };
     albums.push(newAlbum);
     await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
+    await appendToSyncQueue({
+      action: "create",
+      album: newAlbum,
+      imageBase64: image?.base64 || null,
+    });
     console.log("Album created successfully", { newAlbum });
-
     return newAlbum;
   } catch (error) {
     console.error("Failed to create album", { error: error.message, stack: error.stack });
@@ -832,7 +852,6 @@ ipcMain.handle("albums:create", async (event, album) => {
   }
 });
 
-// albums:get, albums:update, albums:delete handlers remain unchanged
 ipcMain.handle("albums:get", async () => {
   try {
     await ensureAlbumFileStructure();
@@ -868,8 +887,23 @@ ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
       console.log("Updated image saved", { path: imagePath });
     }
 
-    albums[index] = { id, name, date, imagePath };
+    const user = await userData();
+    if (!user) {
+      console.error("User data not found, cannot update album");
+    }
+    albums[index] = { id, name, date, imagePath, userId: user.id };
     await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
+
+
+    await appendToSyncQueue({
+      action: "update",
+      id,
+      name,
+      date,
+      imagePath,
+      imageBase64: image?.base64 || null,
+      userId: user.id,
+    });
     console.log("Album updated successfully", { id });
     return albums[index];
   } catch (err) {
@@ -880,7 +914,7 @@ ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
 
 ipcMain.handle("albums:delete", async (_, id) => {
   await ensureAlbumFileStructure();
-  console.log("Deleting album", { id });
+  console.log("Deleting album", { id }); a
   try {
     const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
     let albums = JSON.parse(raw);
@@ -901,12 +935,86 @@ ipcMain.handle("albums:delete", async (_, id) => {
         console.warn("Failed to delete image, continuing", { path: album.imagePath, error: err.message });
       }
     }
+    const user = await userData();
+    if (!user) {
+      console.error("User data not found, cannot update album");
+    }
 
     await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
+    await appendToSyncQueue({
+      action: "delete",
+      id,
+      userId: user.id
+    });
     console.log("Album deleted successfully", { id });
     return { success: true };
   } catch (err) {
     console.error("Error deleting album", { error: err.message, stack: err.stack });
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("sync:albums", async () => {
+
+  try {
+    let queue = [];
+
+    try {
+      const raw = await fs.readFile(SYNC_FILE_PATH, "utf-8");
+      queue = raw.trim() ? JSON.parse(raw) : [];
+    } catch (err) {
+      if (err.code === "ENOENT") {
+        console.log("Sync queue not found. Nothing to sync.");
+        return { success: true, message: "No queue file" };
+      } else {
+        throw err;
+      }
+    }
+
+    if (queue.length === 0) {
+      console.log("Sync queue is empty.");
+      return { success: true, message: "Nothing to sync" };
+    }
+
+    console.log(`Syncing ${queue.length} albums to cloud...`);
+
+    for (const entry of queue) {
+      const { action, album, id, name, date, imageBase64, imagePath, userId } = entry;
+
+      try {
+        if (action === "create") {
+          console.log("Syncing CREATE for album", album?.id);
+          await axiosInstance.post("/api/albums", {
+            ...album,
+            imageBase64,
+            localImagePath: imagePath,
+          });
+
+        } else if (action === "update") {
+          console.log("Syncing UPDATE for album", id);
+          await axiosInstance.put(`/api/albums/${id}`, {
+            name,
+            date,
+            userId,
+            imageBase64,
+            localImagePath: imagePath,
+          });
+
+        } else if (action === "delete") {
+          console.log("Syncing DELETE for album", id);
+          await axiosInstance.delete(`/api/albums/${id}`);
+        }
+      } catch (err) {
+        console.warn("Failed to sync one entry:", err.message);
+      }
+    }
+
+    await fs.writeFile(SYNC_FILE_PATH, JSON.stringify([], null, 2), "utf-8");
+    console.log("Sync completed. Queue cleared.");
+
+    return { success: true, message: "Synced successfully" };
+  } catch (err) {
+    console.error("Error during cloud sync:", err);
     return { success: false, error: err.message };
   }
 });
@@ -1247,8 +1355,8 @@ ipcMain.handle("node-version", async () => {
   return process.version;
 });
 
-// --- Album CRUD handlers (file-based, albums.json) ---
-const albumsFilePath = path.join(app.getPath("userData"), "albums.json");
+
+const albumsFilePath = path.join(app.getPath("userData"), "");
 
 const loadAlbumsData = async () => {
   try {

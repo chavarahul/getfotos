@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
-import { Badge } from "../ui/badge";
 import AlbumFormDialog from "./AlbumDialog";
 import { toast } from "sonner";
 import {

@@ -108,7 +108,7 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
         res = await ipc.createAlbum(payload);
         console.log('Create album response:', res);
       }
-
+      
       toast.success(`Album ${isEditMode ? "updated" : "created"} successfully`);
       setOpen(false);
       return res;
@@ -125,6 +125,7 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('handleSubmit called with:', { name, date, coverImage });
+    
     if (!name.trim()) {
       console.log('Validation failed: Empty album name');
       toast.error("Album name required");
@@ -136,7 +137,6 @@ const AlbumFormDialog: React.FC<AlbumFormDialogProps> = ({ albumToEdit, trigger 
       return;
     }
 
-    console.log('Submitting...');
     setIsSubmitting(true);
     try {
       await createOrUpdateAlbum();

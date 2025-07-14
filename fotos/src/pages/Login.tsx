@@ -13,7 +13,9 @@ import { Eye, EyeOff } from 'lucide-react';
 
 interface ElectronAPI {
   saveUser: (user: any) => Promise<{ success: boolean; error?: string }>;
-  loadUser: () => Promise<{ success: boolean; user?: any; error?: string }>;
+  loadUser: () => Promise<{
+    id: any; success: boolean; user?: any; error?: string
+  }>;
   ping: () => Promise<string>;
 }
 
@@ -175,7 +177,8 @@ const Login = () => {
           email: response.data.user.email,
           phone: response.data.user.phone,
           emailVerified: !!response.data.user.emailVerified,
-          phoneVerified: !!response.data.user.phoneVerified
+          phoneVerified: !!response.data.user.phoneVerified,
+          token: response.data.token
         });
         if (!saveResult.success) {
           console.error('Failed to save user data locally:', saveResult.error);
@@ -183,6 +186,7 @@ const Login = () => {
       }
 
       localStorage.setItem('token', response.data.token);
+
       toast.success('Registration Successful');
       navigate('/dashboard');
     } catch (err) {
@@ -205,19 +209,17 @@ const Login = () => {
       });
 
       if (window.electronAPI) {
-        const saveResult = await window.electronAPI.saveUser({
+         await window.electronAPI.saveUser({
           id: response.data.user.id,
           name: response.data.user.name,
           email: response.data.user.email,
           phone: response.data.user.phone,
           emailVerified: !!response.data.user.emailVerified,
-          phoneVerified: !!response.data.user.phoneVerified
+          phoneVerified: !!response.data.user.phoneVerified,
+          token: response.data.token
         });
-        if (!saveResult.success) {
-          console.error('Failed to save user data locally:', saveResult.error);
-        }
       }
-
+      console.log(response.data.token)
       localStorage.setItem('token', response.data.token);
       toast.success('Login Successful');
       navigate('/dashboard');
@@ -237,7 +239,7 @@ const Login = () => {
           </div>
           <div className="text-gray-600 mb-8">Glad to see you back</div>
           {error && <div className="text-red-500 text-sm mb-4">{error}</div>}
-          
+
           {step === 'login' && (
             <div className="space-y-4">
               <input
