@@ -54,7 +54,7 @@ const AlbumCard = memo(function AlbumCard({ album }: AlbumCardProps) {
     album.name.length > 24 ? `${album.name.substring(0, 24)}...` : album.name;
 
   const handleNavigate = () => {
-    navigate(`/album/${album.name}`);
+    navigate(`/album/${album.name}/${album.id}}`);
   };
 
   return (

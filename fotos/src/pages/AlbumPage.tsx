@@ -18,7 +18,6 @@ declare global {
   }
 }
 
-// Confirmation Modal Component
 const ConfirmationModal: React.FC<{
   isOpen: boolean;
   title: string;
@@ -94,7 +93,6 @@ const ImagePreviewModal: React.FC<{
   );
 };
 
-// Cloud Status Badge Component
 const CloudStatusBadge: React.FC<{ isUploaded: boolean }> = ({ isUploaded }) => {
   if (!isUploaded) return null;
   
@@ -109,7 +107,7 @@ const CloudStatusBadge: React.FC<{ isUploaded: boolean }> = ({ isUploaded }) => 
 };
 
 const AlbumPage: React.FC = () => {
-  const { albumName } = useParams<{ albumName: string }>();
+  const { albumName , id } = useParams<{ albumName: string }>();
   const navigate = useNavigate();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
@@ -258,14 +256,8 @@ const AlbumPage: React.FC = () => {
     setSyncProgress({ current: 0, total: photosToSync.length, estimatedTime: 0 });
 
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("No authentication token found");
-      }
 
-      const credentials = await window.electronAPI.getFtpCredentials();
-      const albumData = credentials.find((cred) => cred.albumName === decodeURIComponent(albumName));
-      const albumId = albumData?.albumId;
+      const albumId = id;
 
       if (!albumId) {
         throw new Error("Album ID not found in FTP credentials");
@@ -277,10 +269,10 @@ const AlbumPage: React.FC = () => {
       let uploadedCount = 0;
 
       const startTime = performance.now();
+      console.log('deded')
       const syncedPhotos = await window.electronAPI.syncPhotosToCloud({
         albumName: decodedAlbumName,
         albumId,
-        token,
       });
 
       for (const photo of syncedPhotos) {

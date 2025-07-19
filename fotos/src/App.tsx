@@ -18,7 +18,7 @@ const App: React.FC = () => {
         <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout><Dashboard /></DashboardLayout></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><DashboardLayout><Settings /></DashboardLayout></ProtectedRoute>} />
         <Route path="/connect" element={<ProtectedRoute><DashboardLayout><Connect /></DashboardLayout></ProtectedRoute>} />
-        <Route path="/album/:albumName" element={<ProtectedRoute><AlbumPage /></ProtectedRoute>} />
+        <Route path="/album/:albumName/:id" element={<ProtectedRoute><AlbumPage /></ProtectedRoute>} />
         <Route path="/" element={<Navigate to="/login" />} />
       </Routes>
     </QueryClientProvider>

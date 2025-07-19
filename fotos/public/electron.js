@@ -459,10 +459,8 @@ async function startFtpServer(username, directory, albumId, albumName, token, po
         if (!photosData[albumName]) {
           photosData[albumName] = [];
         }
-        const userDataDir = path.join(app.getPath('userData'), 'data');
-        const USER_FILE_PATH = path.join(userDataDir, 'user.json');
-        const data = await fs.readFile(USER_FILE_PATH, "utf-8");
-        const user = JSON.parse(data);
+        const user = await userData();
+        
         const newPhoto = {
           id: photoId,
           albumName,
@@ -470,14 +468,14 @@ async function startFtpServer(username, directory, albumId, albumName, token, po
           imageUrl: fileUrl,
           createdAt,
         };
-        photosData[albumName].push(newPhoto);
+        photosData.push(newPhoto);
         await savePhotosData();
         logger.info("Photo inserted into JSON storage", {
           photoId,
           albumName,
           fileUrl,
           source: "User-selected album",
-          photosCount: photosData[albumName].length,
+          photosCount: photosData.length,
         });
         console.log("Current photosData after insert:", JSON.stringify(photosData, null, 2));
       } catch (error) {
@@ -1230,7 +1228,7 @@ ipcMain.handle("upload-image", async (event, { base64Image, albumId, token }) =>
   }
 });
 
-ipcMain.handle("sync-photos-to-cloud", async (event, { albumName, albumId, token }) => {
+ipcMain.handle("sync-photos-to-cloud", async (event, { albumName, albumId  }) => {
   logger.info("Syncing photos to cloud", { albumName, albumId });
 
   try {
@@ -1273,8 +1271,13 @@ ipcMain.handle("sync-photos-to-cloud", async (event, { albumName, albumId, token
           })
         );
 
+        console.log(uploadResult)
+
         const cloudinaryUrl = uploadResult.secure_url;
         logger.info("Image uploaded to Cloudinary", { photoId: photo.id, cloudinaryUrl });
+
+        const user = await userData();
+        const token = user.token;
 
         const response = await retry(() =>
           fetch(`${SERVER_URL}/api/upload-photo`, {
@@ -1286,6 +1289,8 @@ ipcMain.handle("sync-photos-to-cloud", async (event, { albumName, albumId, token
             body: JSON.stringify({ albumId, imageUrl: cloudinaryUrl }),
           })
         );
+
+        console.log(response)
 
         if (!response.ok) {
           const errorData = await response.json();
