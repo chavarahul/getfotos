@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   updateAlbum: (payload) => ipcRenderer.invoke("albums:update", payload),
   deleteAlbum: (id) => ipcRenderer.invoke("albums:delete", id),
   selectFolder: () => ipcRenderer.invoke("dialog:selectFolder"),
+  syncAlbums: () => ipcRenderer.invoke("sync:albums"),
+
+
   ping: () => ipcRenderer.invoke("ping"),
   startFtp: (config) => ipcRenderer.invoke("start-ftp", config),
   getFtpCredentials: () => ipcRenderer.invoke("get-ftp-credentials"),

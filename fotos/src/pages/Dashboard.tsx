@@ -33,6 +33,19 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+  const handleOnline = async () => {
+    console.log("You are online. Syncing albums...");
+    await window.electronAPI.syncAlbums();
+  };
+
+  window.addEventListener("online", handleOnline);
+    const interval = setInterval(handleOnline, 1000 * 5);
+    return () => clearInterval(interval);
+}, []);
+
+
+
   if (isLoading && !albums.length) {
     return (
       <div className="h-screen bg-[#F5F2ED] flex items-center justify-center -mt-10">

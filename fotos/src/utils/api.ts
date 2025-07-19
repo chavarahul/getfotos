@@ -1,4 +1,3 @@
-import { fetchUser } from "@/lib/actions";
 import axios from "axios";
 
 const axiosInstance = axios.create({
@@ -8,15 +7,11 @@ const axiosInstance = axios.create({
 });
 
 
-const loadUser = async () => {
-  const userData = await fetchUser();
-  return userData;
-};
 
 axiosInstance.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
-    config.headers.Authorization = `Bearer ${loadUser().then(user => user.token)}`;
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });

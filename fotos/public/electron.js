@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, net: internet } = require("electron");
 const path = require("path");
 const os = require("os");
 const FtpSrv = require("ftp-srv");
@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require("uuid");
 const debounce = require("lodash.debounce");
 const cloudinary = require("cloudinary").v2;
 const net = require("net");
+const axios = require('axios')
 require("dotenv").config();
 
 process.on("uncaughtException", (error) => {
@@ -34,6 +35,23 @@ cloudinary.config({
   api_key: "575875917966656",
   api_secret: "_MvreXnhQZ_1FyRyL75Fnuyt6u0",
 });
+
+
+const axiosInstance = axios.create({
+  // baseURL: "https://backend-google-three.vercel.app",
+  baseURL: " http://localhost:4000",
+
+});
+
+axiosInstance.interceptors.request.use(async (config) => {
+  const user = await userData();
+  const token = user.token;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 
 const logger = winston.createLogger({
   level: "info",
@@ -799,13 +817,14 @@ ipcMain.handle("albums:create", async (event, album) => {
   console.log("Creating new album", { album, ALBUM_FILE_PATH, IMAGE_DIR_PATH });
 
   try {
+    await ensureAlbumFileStructure();
     let albums = [];
+
     try {
       const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
       albums = raw.trim() === "" ? [] : JSON.parse(raw);
-      console.log("Current albums before creation", { albums });
     } catch (err) {
-      if (err.code === 'ENOENT') {
+      if (err.code === "ENOENT") {
         console.log("Albums file not found, creating new one");
         await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify([]), "utf-8");
       } else {
@@ -813,12 +832,8 @@ ipcMain.handle("albums:create", async (event, album) => {
       }
     }
 
-    let newId = 1;
-    if (albums.length > 0) {
-      const lastAlbum = albums[albums.length - 1];
-      const lastId = parseInt(lastAlbum.id, 10);
-      newId = isNaN(lastId) ? albums.length + 1 : lastId + 1;
-    }
+    const { nanoid } = await import("nanoid");
+    const newId = nanoid();
 
     let imagePath = "";
     if (image?.base64 && image?.name) {
@@ -827,39 +842,55 @@ ipcMain.handle("albums:create", async (event, album) => {
       await fs.mkdir(IMAGE_DIR_PATH, { recursive: true });
       const base64Data = image.base64.replace(/^data:image\/\w+;base64,/, "");
       await fs.writeFile(imagePath, base64Data, "base64");
-      console.log("Image saved", { path: imagePath });
     }
-
 
     const user = await userData();
-    if (!user) {
-      console.error("User data not found, cannot update album");
-    }
+    if (!user) throw new Error("User not found");
 
-    const newAlbum = { id: newId.toString(), userId: user.id, name, date, imagePath };
+    const newAlbum = { id: newId, userId: user.id, name, date, imagePath };
     albums.push(newAlbum);
+
     await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(albums, null, 2), "utf-8");
     await appendToSyncQueue({
       action: "create",
       album: newAlbum,
       imageBase64: image?.base64 || null,
     });
-    console.log("Album created successfully", { newAlbum });
+
+
     return newAlbum;
   } catch (error) {
-    console.error("Failed to create album", { error: error.message, stack: error.stack });
+    console.error("Failed to create album", error);
     return { success: false, error: error.message };
   }
 });
 
+const isOnline = async () => {
+  if (internet.isOnline()) {
+    return true;
+  }
+  return false;
+};
+
 ipcMain.handle("albums:get", async () => {
+  await ensureAlbumFileStructure();
   try {
-    await ensureAlbumFileStructure();
-    const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
-    const albums = JSON.parse(raw);
-    return albums;
+    const online = await isOnline();
+    if (online) {
+      console.log("Online: fetching albums from cloud...");
+      const cloudResponse = await axiosInstance.get("/api/albums");
+      const cloudAlbums = cloudResponse.data;
+
+      await fs.writeFile(ALBUM_FILE_PATH, JSON.stringify(cloudAlbums, null, 2), "utf-8");
+      console.log("Local albums replaced with cloud albums.");
+      return cloudAlbums;
+    } else {
+      console.log("Offline: loading albums from local...");
+      const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
+      return raw.trim() ? JSON.parse(raw) : [];
+    }
   } catch (err) {
-    console.error("Error loading albums", { error: err.message, stack: err.stack });
+    console.error("Error getting albums:", err.message);
     return [];
   }
 });
@@ -914,7 +945,7 @@ ipcMain.handle("albums:update", async (_, { id, name, date, image }) => {
 
 ipcMain.handle("albums:delete", async (_, id) => {
   await ensureAlbumFileStructure();
-  console.log("Deleting album", { id }); a
+  console.log("Deleting album", { id });
   try {
     const raw = await fs.readFile(ALBUM_FILE_PATH, "utf-8");
     let albums = JSON.parse(raw);
@@ -955,67 +986,68 @@ ipcMain.handle("albums:delete", async (_, id) => {
 });
 
 ipcMain.handle("sync:albums", async () => {
-
-  try {
-    let queue = [];
-
+  if (isOnline()) {
     try {
-      const raw = await fs.readFile(SYNC_FILE_PATH, "utf-8");
-      queue = raw.trim() ? JSON.parse(raw) : [];
-    } catch (err) {
-      if (err.code === "ENOENT") {
-        console.log("Sync queue not found. Nothing to sync.");
-        return { success: true, message: "No queue file" };
-      } else {
-        throw err;
-      }
-    }
-
-    if (queue.length === 0) {
-      console.log("Sync queue is empty.");
-      return { success: true, message: "Nothing to sync" };
-    }
-
-    console.log(`Syncing ${queue.length} albums to cloud...`);
-
-    for (const entry of queue) {
-      const { action, album, id, name, date, imageBase64, imagePath, userId } = entry;
+      let queue = [];
 
       try {
-        if (action === "create") {
-          console.log("Syncing CREATE for album", album?.id);
-          await axiosInstance.post("/api/albums", {
-            ...album,
-            imageBase64,
-            localImagePath: imagePath,
-          });
-
-        } else if (action === "update") {
-          console.log("Syncing UPDATE for album", id);
-          await axiosInstance.put(`/api/albums/${id}`, {
-            name,
-            date,
-            userId,
-            imageBase64,
-            localImagePath: imagePath,
-          });
-
-        } else if (action === "delete") {
-          console.log("Syncing DELETE for album", id);
-          await axiosInstance.delete(`/api/albums/${id}`);
-        }
+        const raw = await fs.readFile(SYNC_FILE_PATH, "utf-8");
+        queue = raw.trim() ? JSON.parse(raw) : [];
       } catch (err) {
-        console.warn("Failed to sync one entry:", err.message);
+        if (err.code === "ENOENT") {
+          console.log("Sync queue not found. Nothing to sync.");
+          return { success: true, message: "No queue file" };
+        } else {
+          throw err;
+        }
       }
+
+      if (queue.length === 0) {
+        console.log("Sync queue is empty.");
+        return { success: true, message: "Nothing to sync" };
+      }
+
+      console.log(`Syncing ${queue.length} albums to cloud...`);
+
+      for (const entry of queue) {
+        const { action, album, id, name, date, imageBase64, imagePath, userId } = entry;
+
+        try {
+          if (action === "create") {
+            console.log("Syncing CREATE for album", album?.id);
+            await axiosInstance.post("/api/albums", {
+              ...album,
+              imageBase64,
+              localImagePath: imagePath,
+            });
+
+          } else if (action === "update") {
+            console.log("Syncing UPDATE for album", id);
+            await axiosInstance.put(`/api/albums/${id}`, {
+              name,
+              date,
+              userId,
+              imageBase64,
+              localImagePath: imagePath,
+            });
+
+          } else if (action === "delete") {
+            console.log("Syncing DELETE for album", id);
+            await axiosInstance.delete(`/api/albums/${id}`);
+          }
+        } catch (err) {
+          console.warn("Failed to sync one entry:", err.message);
+        }
+      }
+
+      await fs.writeFile(SYNC_FILE_PATH, JSON.stringify([], null, 2), "utf-8");
+      console.log("Sync completed. Queue cleared.");
+
+      return { success: true, message: "Synced successfully" };
+    } catch (err) {
+      console.error("Error during cloud sync:", err);
+      return { success: false, error: err.message };
     }
-
-    await fs.writeFile(SYNC_FILE_PATH, JSON.stringify([], null, 2), "utf-8");
-    console.log("Sync completed. Queue cleared.");
-
-    return { success: true, message: "Synced successfully" };
-  } catch (err) {
-    console.error("Error during cloud sync:", err);
-    return { success: false, error: err.message };
   }
 });
 
